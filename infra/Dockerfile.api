@@ -3,7 +3,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-cert
 WORKDIR /app
 RUN corepack enable
 COPY . .
-RUN pnpm install --frozen-lockfile && pnpm db:generate && pnpm --filter @pmt/shared build && pnpm --filter @pmt/api build
+RUN pnpm install --frozen-lockfile && pnpm --filter @pmt/api build
 ENV NODE_ENV=production
 USER node
 WORKDIR /app/apps/api

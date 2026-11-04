@@ -9,7 +9,7 @@
     "predev": "pnpm --filter @pmt/shared build",
     "dev": "pnpm --parallel --filter @pmt/api --filter @pmt/web dev",
     "doctor": "node scripts/doctor.cjs",
-    "build": "pnpm --filter @pmt/shared build && pnpm --filter @pmt/api build && pnpm --filter @pmt/web build",
+    "build": "pnpm --filter @pmt/api build && pnpm --filter @pmt/web build",
     "typecheck": "pnpm -r typecheck",
     "pretypecheck": "pnpm --filter @pmt/shared build",
     "pretest": "pnpm --filter @pmt/shared build",
