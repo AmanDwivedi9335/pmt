@@ -1,0 +1,28 @@
+{
+  "name": "@pmt/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "node ../../scripts/run-web.cjs dev",
+    "build": "node ../../scripts/run-web.cjs build",
+    "start": "node ../../scripts/run-web.cjs start",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "next": "16.4.3",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "@pmt/ui": "workspace:*",
+    "@pmt/shared": "workspace:*",
+    "@tanstack/react-table": "^8.21.3",
+    "recharts": "^3.7.0",
+    "lucide-react": "^0.563.0",
+    "zod": "^3.25.76",
+    "tailwindcss": "^4.1.18",
+    "@tailwindcss/postcss": "^4.1.18"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0"
+  }
+}

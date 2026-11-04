@@ -1,0 +1,42 @@
+name: Required checks
+on: [push, pull_request]
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16.6-bookworm
+        env:
+          {
+            POSTGRES_USER: pmt,
+            POSTGRES_PASSWORD: ci_password,
+            POSTGRES_DB: pmt_test,
+          }
+        ports: ["5432:5432"]
+        options: --health-cmd 'pg_isready -U pmt' --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      DATABASE_URL: postgresql://pmt:ci_password@localhost:5432/pmt_test
+      TEST_DATABASE_URL: postgresql://pmt:ci_password@localhost:5432/pmt_test
+      APP_ORIGIN: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate && pnpm --filter @pmt/shared build
+      - run: pnpm db:migrate
+      - run: pnpm lint && pnpm typecheck && pnpm test && pnpm build
+      - run: pnpm exec playwright install --with-deps msedge
+      - run: |
+          pnpm --filter @pmt/api exec node dist/main.js > api.log 2>&1 &
+          pnpm --filter @pmt/web start > web.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://localhost:3000 >/dev/null && break; sleep 2; done
+          pnpm test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          {
+            name: failure-diagnostics,
+            path: "test-results/\nplaywright-report/\n*.log",
+          }

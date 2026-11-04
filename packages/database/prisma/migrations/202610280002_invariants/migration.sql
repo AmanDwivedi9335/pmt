@@ -1,0 +1,11 @@
+ALTER TABLE "BoqItem" ADD CONSTRAINT "boq_valid_quantities" CHECK ("ordered" > 0 AND "supplyRate" >= 0 AND "installationRate" >= 0 AND "taxRate" BETWEEN 0 AND 100);
+ALTER TABLE "Material" ADD CONSTRAINT "material_precision" CHECK ("precision" BETWEEN 0 AND 4 AND "standardRate" >= 0 AND "taxRate" BETWEEN 0 AND 100);
+ALTER TABLE "OpeningBalance" ADD CONSTRAINT "opening_nonnegative" CHECK ("supplied" >= 0 AND "installed" >= 0 AND "installed" <= "supplied" AND "supplyBilled" BETWEEN 0 AND "supplied" AND "installationBilled" BETWEEN 0 AND "installed");
+ALTER TABLE "StockMovement" ADD CONSTRAINT "movement_nonzero" CHECK ("quantity" <> 0);
+ALTER TABLE "Installation" ADD CONSTRAINT "installation_positive" CHECK ("quantity" > 0);
+ALTER TABLE "InvoiceLine" ADD CONSTRAINT "invoice_quantity_positive" CHECK ("quantity" > 0 AND "rate" >= 0 AND "amount" >= 0);
+ALTER TABLE "Payment" ADD CONSTRAINT "payment_positive" CHECK ("amount" > 0);
+ALTER TABLE "PaymentAllocation" ADD CONSTRAINT "allocation_positive" CHECK ("amount" > 0);
+CREATE FUNCTION prevent_immutable_changes() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'Immutable operational record: append a compensating entry'; END $$;
+CREATE TRIGGER immutable_stock BEFORE UPDATE OR DELETE ON "StockMovement" FOR EACH ROW EXECUTE FUNCTION prevent_immutable_changes();
+CREATE TRIGGER immutable_audit BEFORE UPDATE OR DELETE ON "Audit" FOR EACH ROW EXECUTE FUNCTION prevent_immutable_changes();

@@ -1,0 +1,61 @@
+import { describe, it, expect } from "vitest";
+import {
+  balances,
+  day,
+  quantity,
+  projectTransitions,
+  roleDefaults,
+} from "../packages/shared/src";
+import { validateEnvironment } from "../apps/api/src/environment";
+describe("domain invariants", () => {
+  it("rejects unsafe production configuration without exposing connection secrets", () => {
+    expect(() =>
+      validateEnvironment({
+        DATABASE_URL: "postgresql://pmt@localhost/pmt",
+        APP_ORIGIN: "http://localhost:3001",
+        SESSION_DAYS: "0",
+      }),
+    ).toThrow("SESSION_DAYS");
+    expect(() =>
+      validateEnvironment({
+        DATABASE_URL: "postgresql://secret@db/pmt",
+        APP_ORIGIN: "http://example.com",
+        NODE_ENV: "production",
+        IDENTITY_MAIL_KEY: "a".repeat(64),
+      }),
+    ).toThrow("HTTPS");
+    expect(() =>
+      validateEnvironment({
+        DATABASE_URL: "invalid-secret",
+        APP_ORIGIN: "https://example.com",
+        NODE_ENV: "production",
+        IDENTITY_MAIL_KEY: "a".repeat(64),
+      }),
+    ).toThrow("DATABASE_URL");
+  });
+  it("calculates the supplied Bagmane acceptance figures exactly", () => {
+    expect(balances("2600", "500", "192")).toEqual({
+      ordered: "2600",
+      supplied: "500",
+      installed: "192",
+      pendingSupply: "2100",
+      pendingInstallation: "2408",
+      available: "308",
+      supplyUnbilled: "500",
+      installationUnbilled: "192",
+    });
+  });
+  it("retains decimal precision", () =>
+    expect(balances("0.3", "0.2", "0.1").available).toBe("0.1"));
+  it("rejects invalid quantities and dates", () => {
+    expect(quantity.safeParse("-1").success).toBe(false);
+    expect(quantity.safeParse("0").success).toBe(false);
+    expect(quantity.safeParse("1.00001").success).toBe(false);
+    expect(day.safeParse("2026-02-30").success).toBe(false);
+  });
+  it("locks closed projects and separates accounting approval from site engineering", () => {
+    expect(projectTransitions.CLOSED).toEqual([]);
+    expect(roleDefaults.SITE_ENGINEER).not.toContain("invoice.approve");
+    expect(roleDefaults.ACCOUNTS).toContain("invoice.approve");
+  });
+});

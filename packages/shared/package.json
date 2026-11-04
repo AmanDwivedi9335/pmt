@@ -1,0 +1,15 @@
+{
+  "name": "@pmt/shared",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^3.25.76",
+    "decimal.js": "^10.6.0"
+  }
+}
