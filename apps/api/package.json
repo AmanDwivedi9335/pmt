@@ -6,7 +6,7 @@
     "dev": "tsx watch src/main.ts",
     "start": "node dist/main.js",
     "jobs": "node dist/jobs.js",
-    "build": "tsc -p tsconfig.json",
+    "build": "pnpm --workspace-root db:generate && pnpm --filter @pmt/shared build && tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

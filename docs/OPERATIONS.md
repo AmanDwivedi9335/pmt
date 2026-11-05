@@ -43,6 +43,8 @@ Scanner integration: set MALWARE_SCAN_URL to a trusted HTTPS service accepting r
 
 Build API/web images from repository root with infra Dockerfiles. Supply secrets from the deployment platform; do not bake `.env` into images. The web reverse proxy uses API_INTERNAL_URL; configure it at build and runtime consistently for the target environment. Use TLS at ingress. APP_ORIGIN must exactly match the public origin; production sets NODE_ENV=production, enabling Secure cookies. Services run as a nonroot user.
 
+For a Render Node web service, leave **Root Directory** blank so the build can access the whole pnpm workspace. Set **Build Command** to `pnpm install --frozen-lockfile --prod=false && pnpm --filter @pmt/api build` and **Start Command** to `pnpm --filter @pmt/api start`. The API build generates Prisma Client and compiles `@pmt/shared` before compiling the API. Keep database migrations in the release step.
+
 Separate database roles: migration owner for reviewed deploy commands and restricted runtime role (no ALTER/DROP; immutable triggers retained). Separate databases, buckets, SMTP and credentials for local/staging/production. Use least-privilege S3 access and database network rules. API DB health `/api/v1/ready`; process health `/api/v1/health`. Set liveness/readiness probes separately.
 
 Run `prisma migrate deploy` as a controlled, approved release job after backup, never at API startup. Review generated SQL and lock duration. Add forward-compatible columns first, deploy application changes, backfill, then remove old columns in a later release. Migrations have no automatic destructive down scripts. A failed release normally rolls back application images; data rollback requires a reviewed forward repair or recovery to an isolated database.
