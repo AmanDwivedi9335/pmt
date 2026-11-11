@@ -340,7 +340,7 @@ export class ImportsController {
           throw new ConflictException(
             `Create a BOQ item for ${record.material} before importing`,
           );
-        if (!item.ordered.equals(record.ordered))
+        if (!new Decimal(item.ordered).equals(record.ordered))
           throw new ConflictException(
             `Ordered quantity for ${record.material} differs from BOQ`,
           );
@@ -355,7 +355,12 @@ export class ImportsController {
           );
         if (
           (await tx.openingBalance.count({
-            where: { boqItemId: item.id, batch: { reversedAt: null } },
+            where: {
+              boqItemId: item.id,
+              batch: {
+                OR: [{ reversedAt: null }, { reversedAt: { isSet: false } }],
+              },
+            },
           })) ||
           (await tx.stockMovement.count({ where: { boqItemId: item.id } })) ||
           (await tx.installation.count({ where: { boqItemId: item.id } })) ||

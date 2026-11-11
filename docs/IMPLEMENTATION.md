@@ -4,11 +4,11 @@ The workspace was empty on 28 October 2026. No reference CSV/XLSX was supplied. 
 
 ## Architecture
 
-Node 22 LTS, pnpm workspace, Next.js App Router and NestJS modular monolith. PostgreSQL 16+, Prisma 6.19.2 migrations; exact decimals serialized as strings. Same-origin reverse proxy routes /api/v1 to Nest. Opaque, hashed, revocable session tokens in HttpOnly cookies. Organization and project checks run in service boundaries. Browser writes require matching Origin and a session CSRF token. Roles are database records with editable permission arrays; project-scoped memberships cannot grant organization administration.
+Node 22 LTS, pnpm workspace, Next.js App Router and NestJS modular monolith. MongoDB replica set with Prisma 6.19.2. Exact decimals are stored as strings and calculated using decimal arithmetic. Same-origin reverse proxy routes /api/v1 to Nest. Opaque, hashed, revocable session tokens in HttpOnly cookies. Organization and project checks run in service boundaries. Browser writes require matching Origin and a session CSRF token. Roles are database records with editable permission arrays; project-scoped memberships cannot grant organization administration.
 
 ## Ordered delivery gates
 
-1. Database, sessions, invitation/reset, tenant permissions, audit, authenticated shell; unit and real PostgreSQL API tests.
+1. Database, sessions, invitation/reset, tenant permissions, audit, authenticated shell; unit and real MongoDB API tests.
 2. Clients/projects/sites/contacts/work orders/BOQ with versions and lifecycle checks.
 3. Preview/confirm import, source hash, opening balances and reconciliation; no invented historical events.
 4. Atomic stock ledger, procurement/receipts, idempotency, concurrency tests.

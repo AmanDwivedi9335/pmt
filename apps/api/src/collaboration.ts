@@ -278,7 +278,7 @@ export class CollaborationController {
       where: {
         orgId: ctx.orgId,
         kind: "NOTIFICATION",
-        payload: { path: ["projectId"], equals: id },
+        projectId: id,
       },
       select: { id: true, payload: true, availableAt: true },
       orderBy: { availableAt: "desc" },

@@ -106,7 +106,10 @@ export class ReportsController {
         const items = await tx.boqItem.findMany({
           where: {
             orgId: ctx.orgId,
-            workOrder: { projectId: { in: ids }, approvedAt: { not: null } },
+            workOrder: {
+              projectId: { in: ids },
+              approvedAt: { not: null, isSet: true },
+            },
           },
           include: { workOrder: true },
         });
@@ -250,7 +253,7 @@ export class ReportsController {
           materials,
         };
       },
-      { isolationLevel: "RepeatableRead", timeout: 30000 },
+      { timeout: 30000 },
     );
   }
   @Get("projects/:id/export") async export(
@@ -264,17 +267,14 @@ export class ReportsController {
       asOf = cutoff
         ? new Date(`${parse(day, cutoff)}T23:59:59.999Z`)
         : new Date();
-    const rows = await this.db.$transaction(
-      async (tx) => {
-        const items = await tx.boqItem.findMany({
-          where: { orgId: ctx.orgId, workOrder: { projectId: id } },
-        });
-        return Promise.all(
-          items.map((i) => this.ops.balance(tx, ctx, id, i.id, asOf)),
-        );
-      },
-      { isolationLevel: "RepeatableRead" },
-    );
+    const rows = await this.db.$transaction(async (tx) => {
+      const items = await tx.boqItem.findMany({
+        where: { orgId: ctx.orgId, workOrder: { projectId: id } },
+      });
+      return Promise.all(
+        items.map((i) => this.ops.balance(tx, ctx, id, i.id, asOf)),
+      );
+    });
     const wb = new ExcelJS.Workbook();
     const meta = wb.addWorksheet("Project");
     meta.addRows([
@@ -327,7 +327,11 @@ export class ReportsController {
         orgId: ctx.orgId,
         projectId: id,
         issuedAt: { lte: asOf },
-        OR: [{ cancelledAt: null }, { cancelledAt: { gt: asOf } }],
+        OR: [
+          { cancelledAt: null },
+          { cancelledAt: { isSet: false } },
+          { cancelledAt: { gt: asOf } },
+        ],
       },
       include: { allocations: { where: { createdAt: { lte: asOf } } } },
     });
@@ -372,49 +376,48 @@ export class ReportsController {
       asOf = cutoff
         ? new Date(`${parse(day, cutoff)}T23:59:59.999Z`)
         : new Date();
-    const report = await this.db.$transaction(
-      async (tx) => {
-        const items = await tx.boqItem.findMany({
-            where: { orgId: ctx.orgId, workOrder: { projectId: id } },
-          }),
-          rows = await Promise.all(
-            items.map((i) => this.ops.balance(tx, ctx, id, i.id, asOf)),
-          ),
-          invoices = await tx.invoice.findMany({
-            where: {
-              orgId: ctx.orgId,
-              projectId: id,
-              issuedAt: { lte: asOf },
-              OR: [{ cancelledAt: null }, { cancelledAt: { gt: asOf } }],
-            },
-            include: { allocations: { where: { createdAt: { lte: asOf } } } },
-          });
-        return {
-          rows,
-          invoices: invoices.map((i) => {
-            const paid = i.allocations.reduce(
-              (s, a) => s.plus(a.amount.toString()),
-              new Decimal(0),
-            );
-            return {
-              number: i.number,
-              kind: i.kind,
-              total: i.total.toString(),
-              paid: paid.toFixed(2),
-              outstanding: new Decimal(i.total.toString())
-                .minus(paid)
-                .toFixed(2),
-            };
-          }),
-          currency: (
-            await tx.organization.findUniqueOrThrow({
-              where: { id: ctx.orgId },
-            })
-          ).currency,
-        };
-      },
-      { isolationLevel: "RepeatableRead" },
-    );
+    const report = await this.db.$transaction(async (tx) => {
+      const items = await tx.boqItem.findMany({
+          where: { orgId: ctx.orgId, workOrder: { projectId: id } },
+        }),
+        rows = await Promise.all(
+          items.map((i) => this.ops.balance(tx, ctx, id, i.id, asOf)),
+        ),
+        invoices = await tx.invoice.findMany({
+          where: {
+            orgId: ctx.orgId,
+            projectId: id,
+            issuedAt: { lte: asOf },
+            OR: [
+              { cancelledAt: null },
+              { cancelledAt: { isSet: false } },
+              { cancelledAt: { gt: asOf } },
+            ],
+          },
+          include: { allocations: { where: { createdAt: { lte: asOf } } } },
+        });
+      return {
+        rows,
+        invoices: invoices.map((i) => {
+          const paid = i.allocations.reduce(
+            (s, a) => s.plus(a.amount.toString()),
+            new Decimal(0),
+          );
+          return {
+            number: i.number,
+            kind: i.kind,
+            total: i.total.toString(),
+            paid: paid.toFixed(2),
+            outstanding: new Decimal(i.total.toString()).minus(paid).toFixed(2),
+          };
+        }),
+        currency: (
+          await tx.organization.findUniqueOrThrow({
+            where: { id: ctx.orgId },
+          })
+        ).currency,
+      };
+    });
     const buffer = await renderProjectReport({ project, asOf, ...report });
     await this.db.$transaction((tx) =>
       audit(tx, ctx, "report.pdf.exported", id, { asOf: asOf.toISOString() }),

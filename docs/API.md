@@ -2,7 +2,7 @@
 
 Base URL `/api/v1`; interactive route documentation `/api/docs` and machine-readable route index `/api/docs-json`.
 
-Authentication uses `pmt_session`, a HttpOnly, SameSite=Lax cookie (Secure in production). All writes require the exact configured `Origin`. Authenticated writes additionally require `x-csrf-token` returned by `/auth/me`. Organization routes require UUID `x-organization-id`. The server validates both membership and project assignment. Role permissions are stored in PostgreSQL.
+Authentication uses `pmt_session`, a HttpOnly, SameSite=Lax cookie (Secure in production). All writes require the exact configured `Origin`. Authenticated writes additionally require `x-csrf-token` returned by `/auth/me`. Organization routes require UUID `x-organization-id`. The server validates both membership and project assignment. Role permissions are stored in MongoDB.
 
 Mutation errors use `{ "error": { "code": 400, "message": "Validation failed", "fields": { "fieldErrors": {} }, "requestId": "..." } }`. Decimal quantities and amounts are strings. Calendar dates use ISO YYYY-MM-DD. UUIDs identify resources. Mutation endpoints return 201, reads 200, validation 400, session 401, permission 403, hidden resources 404, conflicts 409, rate limits 429.
 

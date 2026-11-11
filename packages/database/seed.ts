@@ -49,7 +49,7 @@ async function main() {
           status: "ACTIVE",
           description:
             "Development acceptance fixture. Not the missing original reference tracker.",
-          members: { create: { membershipId: member.id } },
+          members: { create: { membershipId: member.id, orgId: org.id } },
         },
       });
       await tx.site.create({

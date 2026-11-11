@@ -30,17 +30,13 @@ async function main() {
     datasources: { db: { url: env.DATABASE_URL } },
   });
   try {
-    await db.$queryRaw`SELECT 1`;
-    const unfinished =
-      await db.$queryRaw`SELECT COUNT(*)::int AS count FROM "_prisma_migrations" WHERE finished_at IS NULL AND rolled_back_at IS NULL`;
-    record("PostgreSQL", "PASS", "Database connected");
-    record(
-      "Migrations",
-      unfinished[0].count ? "FAIL" : "PASS",
-      unfinished[0].count
-        ? "Unfinished migrations found"
-        : "No unfinished migrations",
+    const topology = await db.$runCommandRaw({ hello: 1 });
+    if (!topology.setName && topology.msg !== "isdbgrid")
+      throw new Error("A MongoDB replica set or sharded cluster is required");
+    await db.$transaction((tx) =>
+      tx.organization.findFirst({ select: { id: true } }),
     );
+    record("MongoDB", "PASS", "Database connected and transactions available");
     if (env.SEED_EMAIL && env.SEED_PASSWORD) {
       const user = await db.user.findUnique({
         where: { email: env.SEED_EMAIL.trim().toLowerCase() },
@@ -78,9 +74,9 @@ async function main() {
       );
   } catch {
     record(
-      "PostgreSQL",
+      "MongoDB",
       "FAIL",
-      "Database or migration history unavailable; verify DATABASE_URL and start PostgreSQL",
+      "Database or transactions unavailable; verify DATABASE_URL and the replica set",
     );
   } finally {
     await db.$disconnect();

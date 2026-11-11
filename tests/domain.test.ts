@@ -11,14 +11,14 @@ describe("domain invariants", () => {
   it("rejects unsafe production configuration without exposing connection secrets", () => {
     expect(() =>
       validateEnvironment({
-        DATABASE_URL: "postgresql://pmt@localhost/pmt",
+        DATABASE_URL: "mongodb://localhost/pmt",
         APP_ORIGIN: "http://localhost:3001",
         SESSION_DAYS: "0",
       }),
     ).toThrow("SESSION_DAYS");
     expect(() =>
       validateEnvironment({
-        DATABASE_URL: "postgresql://secret@db/pmt",
+        DATABASE_URL: "mongodb://user:secret@db/pmt",
         APP_ORIGIN: "http://example.com",
         NODE_ENV: "production",
         IDENTITY_MAIL_KEY: "a".repeat(64),

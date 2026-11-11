@@ -92,7 +92,11 @@ export class Operations {
         orgId: ctx.orgId,
         batch: {
           asOf: { lte: asOf },
-          OR: [{ reversedAt: null }, { reversedAt: { gt: asOf } }],
+          OR: [
+            { reversedAt: null },
+            { reversedAt: { isSet: false } },
+            { reversedAt: { gt: asOf } },
+          ],
         },
       },
     });
@@ -105,7 +109,11 @@ export class Operations {
         boqItemId: id,
         invoice: {
           issuedAt: { lte: asOf },
-          OR: [{ cancelledAt: null }, { cancelledAt: { gt: asOf } }],
+          OR: [
+            { cancelledAt: null },
+            { cancelledAt: { isSet: false } },
+            { cancelledAt: { gt: asOf } },
+          ],
         },
       },
       include: { invoice: { select: { kind: true } } },
@@ -168,17 +176,14 @@ export class OperationsController {
     const asOf = cutoff
       ? new Date(`${parse(day, cutoff)}T23:59:59.999Z`)
       : new Date();
-    return this.db.$transaction(
-      async (tx) => {
-        const items = await tx.boqItem.findMany({
-          where: { orgId: ctx.orgId, workOrder: { projectId: id } },
-        });
-        return Promise.all(
-          items.map((item) => this.ops.balance(tx, ctx, id, item.id, asOf)),
-        );
-      },
-      { isolationLevel: "RepeatableRead" },
-    );
+    return this.db.$transaction(async (tx) => {
+      const items = await tx.boqItem.findMany({
+        where: { orgId: ctx.orgId, workOrder: { projectId: id } },
+      });
+      return Promise.all(
+        items.map((item) => this.ops.balance(tx, ctx, id, item.id, asOf)),
+      );
+    });
   }
   @Get("movements") async ledger(@Req() req: Request, @Param("id") id: string) {
     const ctx = await this.security.context(req, "project.view", id);

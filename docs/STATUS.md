@@ -5,7 +5,7 @@ This is a working operational baseline, not completion of the entire enterprise 
 ## Implemented and exercised
 
 - pnpm monorepo; Next App Router/React/TypeScript, Tailwind, shared shadcn-style Radix dialog/button primitives, Lucide, TanStack Table, Recharts; light/dark shell and responsive project screens.
-- PostgreSQL/Prisma schema and reproducible migrations, UUIDs, composite tenant foreign keys, exact numeric fields, version checks, append-only stock/audit triggers.
+- MongoDB/Prisma schema and unique indexes, UUIDs, service-level tenant checks, exact decimal strings, version checks and append-only stock/audit service paths.
 - Registration and organization creation; email/password login, HttpOnly sessions, renewal/logout/all-session revocation, single-use invitation/reset tokens; queued email; persistent rate limits; Origin and session CSRF protection.
 - Nine seeded database-configured role templates, editable permission sets, multiple organization memberships and project assignments checked in backend boundaries.
 - Client creation/edit/archival, project creation/edit, guarded lifecycle transitions, project members, sites and contacts, material catalog creation, draft work-order items, work-order snapshots and approval.
@@ -15,7 +15,7 @@ This is a working operational baseline, not completion of the entire enterprise 
 - Supply/installation invoice drafts from contract rates and tax, retention, atomic issue with quantity allocation, cancellation of unpaid invoices, partial payments and bounded allocations; current invoice totals, paid/outstanding/overdue amounts.
 - Project tasks with priority, due dates, assignees and optimistic status updates; list/Kanban views; activity records.
 - Private S3 upload/download authorization, quarantine, size/type/magic checks, fail-closed external scanning contract and immutable clean object keys; requires configured infrastructure for end-to-end use.
-- PostgreSQL outbox with row locking, retry/backoff/deduplication and terminal failure retention; SMTP worker, in-app payment and overdue-task notifications.
+- MongoDB outbox with atomic job claims, retry/backoff/deduplication and terminal failure retention; SMTP worker, in-app payment and overdue-task notifications.
 - Authorized portfolio counts and value-weighted progress, project material tables, as-of posted quantity/financial calculations, project Excel and PDF reports.
 - OpenAPI route index, explicit REST documentation, structured request/error logging, health/readiness endpoints, optional OTLP HTTP tracing and exception reporting.
 - Dockerfiles, local Compose, CI required-check workflow definition, backup/restore scripts, release/recovery/UAT checklists and separate development seed.
@@ -42,14 +42,13 @@ The test suite covers the twelve minimum business concerns at the available aggr
 
 ## Specific operational limits
 
-- Current authorization checks tenant/project access before service work; runtime DB permissions must also be restricted. There is no PostgreSQL RLS policy yet. SUPER_ADMIN is organization scoped; it does not silently bypass tenant boundaries.
+- Current authorization checks tenant/project access before service work; runtime DB permissions must also be restricted. SUPER_ADMIN is organization scoped; it does not silently bypass tenant boundaries.
 - Many list endpoints return the latest/first 100 rows. Projects provide pagination, but the UI currently loads one page. Reporting/aggregations are real but query-per-material and require optimization and load testing at large portfolio sizes.
 - Browser navigation uses client state rather than shareable route URLs. Tabular screens horizontally scroll on small screens. Role settings support editable permission sets; a role permission change requires relogin to refresh browser visibility, while the server enforces it immediately.
 - Import checks limits on compressed file size, archive entry sizes, row/column counts and source totals. Parsing still occurs in the API process; move large/untrusted ingestion to a bounded worker before broad public exposure.
 - Historical opening balances use explicitly confirmed effective dates. New stock, approval and invoice allocations use posting timestamps. Backdated operational event attribution and prior contract/status snapshots are not reconstructed. Invoice reports distinguish paid allocations from backdated payment receipt labels.
 - Invoice line quantities are allocated against the BOQ's aggregate eligibility pool. They do not yet identify specific installation records, receipt lots or independent certification records.
 - SMTP delivery is at-least-once. Signed upload metadata alone does not approve a document; scanning is required. File listing is implemented, but no scanner/storage integration has been verified in this workspace.
-- Docker was installed but its engine was stopped. Local verification used an ignored disposable PostgreSQL cluster with loopback-only trust authentication. This configuration is development only.
 - Production deployment, successful external email delivery, S3 scanning lifecycle, production backup restoration, monitoring delivery and business UAT have not been performed. A local isolated test-data restore was rehearsed. No live operational data was migrated.
 
 Nothing in this document waives a master requirement. The table is the explicit continuation backlog and the release checklist remains blocking for real production use.

@@ -3,14 +3,15 @@ import { Db } from "../apps/api/src/db";
 import { runJob } from "../apps/api/src/jobs";
 import { randomUUID } from "node:crypto";
 process.env.DATABASE_URL =
-  process.env.TEST_DATABASE_URL || "postgresql://pmt@127.0.0.1:5435/pmt_test";
+  process.env.TEST_DATABASE_URL ||
+  "mongodb://127.0.0.1:27018/pmt_test?replicaSet=pmt&directConnection=true";
 const db = new Db();
 beforeAll(() => {
   if (!new URL(process.env.DATABASE_URL!).pathname.endsWith("_test"))
     throw new Error("Dedicated test database required");
 });
 afterAll(() => db.$disconnect());
-it("uses SKIP LOCKED so concurrent workers deliver a job once", async () => {
+it("claims each job atomically across concurrent workers", async () => {
   const job = await db.outbox.create({
     data: {
       kind: "EMAIL",

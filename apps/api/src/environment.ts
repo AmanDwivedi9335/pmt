@@ -5,8 +5,8 @@ export function validateEnvironment(env: NodeJS.ProcessEnv) {
       .string()
       .url()
       .refine(
-        (v) => /^postgres(ql)?:/.test(v),
-        "PostgreSQL connection URL required",
+        (v) => /^mongodb(?:\+srv)?:\/\//.test(v),
+        "MongoDB connection URL required",
       ),
     APP_ORIGIN: z.string().url(),
     NODE_ENV: z

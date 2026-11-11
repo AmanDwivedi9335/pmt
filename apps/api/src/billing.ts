@@ -138,7 +138,7 @@ export class BillingController {
             quantity: line.quantity,
             rate: rate.toString(),
             taxRate: item.taxRate.toString(),
-            amount: amount.toFixed(2),
+            amount: amount.toFixed(),
           });
         }
         const retention = subtotal
@@ -154,11 +154,13 @@ export class BillingController {
             kind: input.kind,
             currency: org.currency,
             dueDate: new Date(input.dueDate),
-            subtotal: subtotal.toFixed(2),
-            tax: tax.toFixed(2),
-            retention: retention.toFixed(2),
-            total: total.toFixed(2),
-            lines: { create: lines },
+            subtotal: subtotal.toFixed(),
+            tax: tax.toFixed(),
+            retention: retention.toFixed(),
+            total: total.toFixed(),
+            lines: {
+              create: lines.map((line) => ({ ...line, orgId: ctx.orgId })),
+            },
           },
           include: { lines: true },
         });
@@ -331,7 +333,12 @@ export class BillingController {
           amount: input.amount,
           reference: input.reference,
           receivedAt: new Date(input.receivedAt),
-          allocations: { create: input.allocations },
+          allocations: {
+            create: input.allocations.map((allocation) => ({
+              ...allocation,
+              orgId: ctx.orgId,
+            })),
+          },
         },
         include: { allocations: true },
       });
@@ -339,6 +346,7 @@ export class BillingController {
         data: {
           orgId: ctx.orgId,
           kind: "NOTIFICATION",
+          projectId: id,
           dedupeKey: `payment:${row.id}`,
           payload: {
             projectId: id,

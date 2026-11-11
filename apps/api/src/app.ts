@@ -104,7 +104,7 @@ class HealthController {
     return { status: "ok" };
   }
   @Get("ready") async ready() {
-    await this.db.$queryRaw`SELECT 1`;
+    await this.db.$runCommandRaw({ ping: 1 });
     return { status: "ready" };
   }
 }

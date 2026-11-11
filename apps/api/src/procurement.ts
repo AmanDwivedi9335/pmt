@@ -108,22 +108,33 @@ export class ProcurementController {
           line.boqItemId,
           line.quantity,
         );
-        const purchased = await tx.purchaseLine.aggregate({
+        const purchased = await tx.purchaseLine.findMany({
           where: {
             boqItemId: item.id,
             purchaseOrder: {
               status: { in: ["DRAFT", "SUBMITTED", "APPROVED"] },
             },
           },
-          _sum: { quantity: true },
+          select: { quantity: true },
         });
-        const opening = await tx.openingBalance.aggregate({
-          where: { boqItemId: item.id, batch: { reversedAt: null } },
-          _sum: { supplied: true },
+        const opening = await tx.openingBalance.findMany({
+          where: {
+            boqItemId: item.id,
+            batch: {
+              OR: [{ reversedAt: null }, { reversedAt: { isSet: false } }],
+            },
+          },
+          select: { supplied: true },
         });
         if (
-          new Decimal(purchased._sum.quantity?.toString() || 0)
-            .plus(opening._sum.supplied?.toString() || 0)
+          purchased
+            .reduce((sum, row) => sum.plus(row.quantity), new Decimal(0))
+            .plus(
+              opening.reduce(
+                (sum, row) => sum.plus(row.supplied),
+                new Decimal(0),
+              ),
+            )
             .plus(line.quantity)
             .gt(item.ordered.toString())
         )
@@ -138,7 +149,9 @@ export class ProcurementController {
           supplierId: input.supplierId,
           number: input.number,
           createdBy: ctx.userId,
-          lines: { create: input.lines.map((l) => ({ ...l })) },
+          lines: {
+            create: input.lines.map((line) => ({ ...line, orgId: ctx.orgId })),
+          },
         },
         include: { lines: true },
       });

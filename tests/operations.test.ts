@@ -5,7 +5,8 @@ import { createApp } from "../apps/api/src/app";
 import { Db } from "../apps/api/src/db";
 import { passwordHash } from "../apps/api/src/security";
 process.env.DATABASE_URL =
-  process.env.TEST_DATABASE_URL || "postgresql://pmt@127.0.0.1:5435/pmt_test";
+  process.env.TEST_DATABASE_URL ||
+  "mongodb://127.0.0.1:27018/pmt_test?replicaSet=pmt&directConnection=true";
 process.env.APP_ORIGIN = "http://localhost:3000";
 let app: any,
   db: Db,

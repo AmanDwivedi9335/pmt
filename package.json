@@ -17,7 +17,7 @@
     "test:api": "vitest run tests/api.test.ts",
     "test:e2e": "playwright test",
     "db:generate": "prisma generate --schema packages/database/prisma/schema.prisma",
-    "db:migrate": "prisma migrate deploy --schema packages/database/prisma/schema.prisma",
+    "db:push": "prisma db push --schema packages/database/prisma/schema.prisma",
     "db:seed": "tsx --tsconfig apps/api/tsconfig.json packages/database/seed.ts",
     "jobs:dev": "pnpm --filter @pmt/api exec tsx src/jobs.ts",
     "lint": "eslint .",

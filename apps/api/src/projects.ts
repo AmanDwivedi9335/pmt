@@ -71,7 +71,10 @@ export class ProjectsController {
   @Get("clients") async clients(@Req() req: Request) {
     const ctx = await this.security.context(req, "project.view");
     return this.db.client.findMany({
-      where: { orgId: ctx.orgId, archivedAt: null },
+      where: {
+        orgId: ctx.orgId,
+        OR: [{ archivedAt: null }, { archivedAt: { isSet: false } }],
+      },
       orderBy: { name: "asc" },
       take: 100,
     });
@@ -172,14 +175,20 @@ export class ProjectsController {
       throw new ConflictException("Target date must follow start date");
     return this.db.serial(async (tx) => {
       const client = await tx.client.findFirst({
-        where: { id: input.clientId, orgId: ctx.orgId, archivedAt: null },
+        where: {
+          id: input.clientId,
+          orgId: ctx.orgId,
+          OR: [{ archivedAt: null }, { archivedAt: { isSet: false } }],
+        },
       });
       if (!client) throw new NotFoundException("Client not found");
       const p = await tx.project.create({
         data: {
           orgId: ctx.orgId,
           ...input,
-          members: { create: { membershipId: ctx.membershipId } },
+          members: {
+            create: { membershipId: ctx.membershipId, orgId: ctx.orgId },
+          },
         },
       });
       await audit(tx, ctx, "project.created", p.id);

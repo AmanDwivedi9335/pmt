@@ -52,7 +52,7 @@ export class TeamsController {
   @Post() async create(@Req() req: Request, @Body() body: unknown) {
     const ctx = await this.security.context(req, "team.manage");
     const input = parse(teamInput, body);
-    return this.db.$transaction(async (tx) => {
+    return this.db.serial(async (tx) => {
       const team = await tx.team.create({
         data: {
           orgId: ctx.orgId,
@@ -73,7 +73,7 @@ export class TeamsController {
     const ctx = await this.security.context(req, "team.manage");
     const teamId = parse(uuid, id);
     const input = parse(teamInput, body);
-    return this.db.$transaction(async (tx) => {
+    return this.db.serial(async (tx) => {
       const team = await tx.team.update({
         where: { id_orgId: { id: teamId, orgId: ctx.orgId } },
         data: { ...input, normalizedName: input.name.toLowerCase() },
@@ -89,7 +89,7 @@ export class TeamsController {
   ) {
     const ctx = await this.security.context(req, "team.manage");
     const teamId = parse(uuid, id);
-    return this.db.$transaction(async (tx) => {
+    return this.db.serial(async (tx) => {
       await tx.team.delete({
         where: { id_orgId: { id: teamId, orgId: ctx.orgId } },
       });
@@ -152,14 +152,17 @@ export class TeamsController {
         where: { orgId: ctx.orgId, active: true, user: { email: input.email } },
         select: { id: true },
       });
-      const result = await tx.teamMember.createMany({
-        data: { teamId, membershipId: member.id, orgId: ctx.orgId },
-        skipDuplicates: true,
+      const existing = await tx.teamMember.findUnique({
+        where: { teamId_membershipId: { teamId, membershipId: member.id } },
       });
-      if (result.count)
+      if (!existing) {
+        await tx.teamMember.create({
+          data: { teamId, membershipId: member.id, orgId: ctx.orgId },
+        });
         await audit(tx, ctx, "team.member.added", teamId, {
           membershipId: member.id,
         });
+      }
       return { ok: true };
     });
   }
@@ -172,7 +175,7 @@ export class TeamsController {
     const ctx = await this.security.context(req, "team.manage");
     const teamId = parse(uuid, id);
     const membershipId = parse(uuid, memberId);
-    return this.db.$transaction(async (tx) => {
+    return this.db.serial(async (tx) => {
       const result = await tx.teamMember.deleteMany({
         where: { teamId, membershipId, orgId: ctx.orgId },
       });

@@ -45,10 +45,27 @@ const dummyPasswordHash = passwordHash(token());
 export class AuthService {
   constructor(@Inject(Db) readonly db: Db) {}
   async limit(key: string, max = 10) {
-    const result = await this.db.$queryRaw<
-      { count: number }[]
-    >`INSERT INTO "LoginAttempt" ("key","count","windowAt") VALUES (${hash(key)},1,NOW()) ON CONFLICT ("key") DO UPDATE SET "count"=CASE WHEN "LoginAttempt"."windowAt" < NOW()-INTERVAL '15 minutes' THEN 1 ELSE "LoginAttempt"."count"+1 END, "windowAt"=CASE WHEN "LoginAttempt"."windowAt" < NOW()-INTERVAL '15 minutes' THEN NOW() ELSE "LoginAttempt"."windowAt" END RETURNING "count"`;
-    if (result[0].count > max)
+    const expired = {
+      $lt: [
+        { $ifNull: ["$windowAt", { $date: "1970-01-01T00:00:00.000Z" }] },
+        { $subtract: ["$$NOW", 15 * 60 * 1000] },
+      ],
+    };
+    const result = (await this.db.$runCommandRaw({
+      findAndModify: "LoginAttempt",
+      query: { _id: hash(key) },
+      update: [
+        {
+          $set: {
+            count: { $cond: [expired, 1, { $add: ["$count", 1] }] },
+            windowAt: { $cond: [expired, "$$NOW", "$windowAt"] },
+          },
+        },
+      ],
+      upsert: true,
+      new: true,
+    })) as { value: { count: number } };
+    if (result.value.count > max)
       throw new HttpException(
         "Too many attempts. Try again in 15 minutes.",
         429,
@@ -248,7 +265,10 @@ export class AuthController {
       if (!updated.count)
         throw new ConflictException("Password changed. Sign in again.");
       await tx.identityToken.updateMany({
-        where: { userId: user.id, usedAt: null },
+        where: {
+          userId: user.id,
+          OR: [{ usedAt: null }, { usedAt: { isSet: false } }],
+        },
         data: { usedAt: new Date() },
       });
       await tx.session.deleteMany({ where: { userId: user.id } });
@@ -276,6 +296,7 @@ export class AuthController {
             userId: user.id,
             tokenHash: hash(raw),
             expiresAt: new Date(Date.now() + 3600000),
+            usedAt: null,
           },
         });
         await tx.outbox.create({
@@ -312,7 +333,10 @@ export class AuthController {
       if (!t || t.usedAt || t.expiresAt < new Date())
         throw new UnauthorizedException("Reset link is invalid or expired");
       await tx.identityToken.updateMany({
-        where: { userId: t.userId, usedAt: null },
+        where: {
+          userId: t.userId,
+          OR: [{ usedAt: null }, { usedAt: { isSet: false } }],
+        },
         data: { usedAt: new Date() },
       });
       await tx.user.update({
@@ -557,8 +581,10 @@ export class OrganizationController {
         where: {
           orgId: ctx.orgId,
           email: input.email,
-          acceptedAt: null,
-          revokedAt: null,
+          AND: [
+            { OR: [{ acceptedAt: null }, { acceptedAt: { isSet: false } }] },
+            { OR: [{ revokedAt: null }, { revokedAt: { isSet: false } }] },
+          ],
         },
         select: { id: true },
       });
@@ -570,7 +596,11 @@ export class OrganizationController {
         await tx.outbox.deleteMany({
           where: {
             orgId: ctx.orgId,
-            processedAt: null,
+            AND: [
+              {
+                OR: [{ processedAt: null }, { processedAt: { isSet: false } }],
+              },
+            ],
             OR: invitations.flatMap(({ id }) => [
               { dedupeKey: `invite:${id}` },
               { dedupeKey: { startsWith: `invite:${id}:` } },
@@ -797,8 +827,10 @@ export class OrganizationController {
         where: {
           orgId: ctx.orgId,
           email: input.email,
-          acceptedAt: null,
-          revokedAt: null,
+          AND: [
+            { OR: [{ acceptedAt: null }, { acceptedAt: { isSet: false } }] },
+            { OR: [{ revokedAt: null }, { revokedAt: { isSet: false } }] },
+          ],
         },
         select: { id: true },
       });
@@ -849,7 +881,9 @@ export class OrganizationController {
       await tx.outbox.deleteMany({
         where: {
           orgId: ctx.orgId,
-          processedAt: null,
+          AND: [
+            { OR: [{ processedAt: null }, { processedAt: { isSet: false } }] },
+          ],
           OR: [{ dedupeKey: key }, { dedupeKey: { startsWith: `${key}:` } }],
         },
       });

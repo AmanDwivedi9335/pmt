@@ -15,6 +15,9 @@ const mail = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: Number(process.env.SMTP_PORT || 1025),
   secure: process.env.SMTP_SECURE === "true",
+  connectionTimeout: 10000,
+  greetingTimeout: 10000,
+  socketTimeout: 30000,
   ...(process.env.SMTP_USER
     ? { auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD } }
     : {}),
@@ -25,19 +28,41 @@ export async function runJob(
     mail.sendMail(payload),
   onlyJobId: string | null = null,
 ) {
-  return database.$transaction(
-    async (tx) => {
-      const rows = await tx.$queryRaw<
-        {
-          id: string;
-          kind: string;
-          payload: Prisma.JsonValue;
-          attempts: number;
-        }[]
-      >`SELECT * FROM "Outbox" WHERE "processedAt" IS NULL AND "availableAt" <= NOW() AND "attempts" < 8 AND (${onlyJobId}::uuid IS NULL OR "id"=${onlyJobId}::uuid) ORDER BY "availableAt" FOR UPDATE SKIP LOCKED LIMIT 1`;
-      const job = rows[0];
-      if (!job) return false;
-      try {
+  const now = new Date();
+  const eligible: Prisma.OutboxWhereInput = {
+    ...(onlyJobId ? { id: onlyJobId } : {}),
+    availableAt: { lte: now },
+    attempts: { lt: 8 },
+    AND: [
+      { OR: [{ processedAt: null }, { processedAt: { isSet: false } }] },
+      {
+        OR: [
+          { leaseUntil: null },
+          { leaseUntil: { isSet: false } },
+          { leaseUntil: { lte: now } },
+        ],
+      },
+    ],
+  };
+  const job = await database.outbox.findFirst({
+    where: eligible,
+    orderBy: [{ availableAt: "asc" }, { id: "asc" }],
+  });
+  if (!job) return false;
+  const leaseToken = randomUUID();
+  const claim = await database.outbox.updateMany({
+    where: { AND: [eligible, { id: job.id }] },
+    data: { leaseToken, leaseUntil: new Date(now.getTime() + 120000) },
+  });
+  if (!claim.count) return false;
+
+  try {
+    await database.$transaction(
+      async (tx) => {
+        const current = await tx.outbox.findUniqueOrThrow({
+          where: { id: job.id },
+        });
+        if (current.processedAt || current.leaseToken !== leaseToken) return;
         const payload = job.payload as any;
         if (job.kind === "EMAIL")
           await deliverEmail({
@@ -119,30 +144,38 @@ export async function runJob(
             ...(job.kind === "EMAIL" ? { payload: {} } : {}),
             attempts: { increment: 1 },
             lastError: null,
+            leaseToken: null,
+            leaseUntil: null,
           },
         });
         log.info({ jobId: job.id, kind: job.kind }, "Job completed");
-      } catch {
-        await tx.outbox.update({
-          where: { id: job.id },
-          data: {
-            attempts: { increment: 1 },
-            availableAt: new Date(
-              Date.now() + Math.min(3600000, 10000 * 2 ** job.attempts),
-            ),
-            lastError:
-              "Job delivery failed; verify configured dependency availability",
-          },
-        });
-        log.error(
-          { jobId: job.id, kind: job.kind, attempt: job.attempts + 1 },
-          "Job failed",
-        );
-      }
-      return true;
-    },
-    { timeout: 60000 },
-  );
+      },
+      { timeout: 60000 },
+    );
+  } catch {
+    await database.outbox.updateMany({
+      where: {
+        id: job.id,
+        leaseToken,
+        OR: [{ processedAt: null }, { processedAt: { isSet: false } }],
+      },
+      data: {
+        attempts: { increment: 1 },
+        availableAt: new Date(
+          Date.now() + Math.min(3600000, 10000 * 2 ** job.attempts),
+        ),
+        lastError:
+          "Job delivery failed; verify configured dependency availability",
+        leaseToken: null,
+        leaseUntil: null,
+      },
+    });
+    log.error(
+      { jobId: job.id, kind: job.kind, attempt: job.attempts + 1 },
+      "Job failed",
+    );
+  }
+  return true;
 }
 async function overdue() {
   const tasks = await db.task.findMany({
@@ -157,6 +190,7 @@ async function overdue() {
       create: {
         orgId: t.orgId,
         kind: "NOTIFICATION",
+        projectId: t.projectId,
         dedupeKey: `overdue:${t.id}:${new Date().toISOString().slice(0, 10)}`,
         payload: {
           projectId: t.projectId,

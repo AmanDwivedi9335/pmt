@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mongodb"
   url      = env("DATABASE_URL")
 }
 
@@ -43,7 +43,7 @@ enum MovementKind {
 }
 
 model User {
-  id           String          @id @default(uuid()) @db.Uuid
+  id           String          @id @default(uuid()) @map("_id")
   email        String          @unique
   name         String
   passwordHash String
@@ -54,7 +54,7 @@ model User {
 }
 
 model Organization {
-  id          String       @id @default(uuid()) @db.Uuid
+  id          String       @id @default(uuid()) @map("_id")
   name        String
   currency    String       @default("INR")
   createdAt   DateTime     @default(now())
@@ -71,8 +71,8 @@ model Organization {
 }
 
 model Role {
-  id           String       @id @default(uuid()) @db.Uuid
-  orgId        String       @db.Uuid
+  id           String       @id @default(uuid()) @map("_id")
+  orgId        String
   organization Organization @relation(fields: [orgId], references: [id])
   name         String
   permissions  String[]
@@ -84,13 +84,13 @@ model Role {
 }
 
 model Membership {
-  id            String          @id @default(uuid()) @db.Uuid
-  orgId         String          @db.Uuid
-  userId        String          @db.Uuid
-  roleId        String          @db.Uuid
+  id            String          @id @default(uuid()) @map("_id")
+  orgId         String
+  userId        String
+  roleId        String
   organization  Organization    @relation(fields: [orgId], references: [id])
   user          User            @relation(fields: [userId], references: [id])
-  role          Role            @relation(fields: [roleId, orgId], references: [id, orgId])
+  role          Role            @relation(fields: [roleId], references: [id])
   projectAccess ProjectMember[]
   teams         TeamMember[]
   active        Boolean         @default(true)
@@ -101,8 +101,8 @@ model Membership {
 }
 
 model Team {
-  id             String       @id @default(uuid()) @db.Uuid
-  orgId          String       @db.Uuid
+  id             String       @id @default(uuid()) @map("_id")
+  orgId          String
   organization   Organization @relation(fields: [orgId], references: [id])
   name           String
   normalizedName String
@@ -116,20 +116,21 @@ model Team {
 }
 
 model TeamMember {
-  orgId        String     @db.Uuid
-  teamId       String     @db.Uuid
-  membershipId String     @db.Uuid
-  team         Team       @relation(fields: [teamId, orgId], references: [id, orgId], onDelete: Cascade)
-  membership   Membership @relation(fields: [membershipId, orgId], references: [id, orgId])
+  id           String     @id @default(uuid()) @map("_id")
+  orgId        String
+  teamId       String
+  membershipId String
+  team         Team       @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  membership   Membership @relation(fields: [membershipId], references: [id])
   createdAt    DateTime   @default(now())
 
-  @@id([teamId, membershipId])
+  @@unique([teamId, membershipId])
   @@index([membershipId, orgId])
 }
 
 model Session {
-  id        String   @id @default(uuid()) @db.Uuid
-  userId    String   @db.Uuid
+  id        String   @id @default(uuid()) @map("_id")
+  userId    String
   user      User     @relation(fields: [userId], references: [id])
   tokenHash String   @unique
   csrf      String
@@ -140,8 +141,8 @@ model Session {
 }
 
 model IdentityToken {
-  id        String    @id @default(uuid()) @db.Uuid
-  userId    String    @db.Uuid
+  id        String    @id @default(uuid()) @map("_id")
+  userId    String
   user      User      @relation(fields: [userId], references: [id])
   tokenHash String    @unique
   expiresAt DateTime
@@ -149,12 +150,12 @@ model IdentityToken {
 }
 
 model Invitation {
-  id           String       @id @default(uuid()) @db.Uuid
-  orgId        String       @db.Uuid
+  id           String       @id @default(uuid()) @map("_id")
+  orgId        String
   organization Organization @relation(fields: [orgId], references: [id])
   email        String
-  roleId       String       @db.Uuid
-  role         Role         @relation(fields: [roleId, orgId], references: [id, orgId])
+  roleId       String
+  role         Role         @relation(fields: [roleId], references: [id])
   tokenHash    String       @unique
   expiresAt    DateTime
   revokedAt    DateTime?
@@ -165,14 +166,14 @@ model Invitation {
 }
 
 model LoginAttempt {
-  key      String   @id
+  key      String   @id @map("_id")
   count    Int      @default(0)
   windowAt DateTime @default(now())
 }
 
 model Client {
-  id           String       @id @default(uuid()) @db.Uuid
-  orgId        String       @db.Uuid
+  id           String       @id @default(uuid()) @map("_id")
+  orgId        String
   organization Organization @relation(fields: [orgId], references: [id])
   name         String
   email        String?
@@ -187,11 +188,11 @@ model Client {
 }
 
 model Project {
-  id             String          @id @default(uuid()) @db.Uuid
-  orgId          String          @db.Uuid
+  id             String          @id @default(uuid()) @map("_id")
+  orgId          String
   organization   Organization    @relation(fields: [orgId], references: [id])
-  clientId       String          @db.Uuid
-  client         Client          @relation(fields: [clientId, orgId], references: [id, orgId])
+  clientId       String
+  client         Client          @relation(fields: [clientId], references: [id])
   code           String
   name           String
   description    String          @default("")
@@ -200,12 +201,12 @@ model Project {
   state          String          @default("")
   country        String          @default("India")
   mapUrl         String?
-  startDate      DateTime?       @db.Date
-  targetDate     DateTime?       @db.Date
-  actualDate     DateTime?       @db.Date
+  startDate      DateTime?
+  targetDate     DateTime?
+  actualDate     DateTime?
   manager        String          @default("")
-  budget         Decimal         @default(0) @db.Decimal(20, 2)
-  contractValue  Decimal         @default(0) @db.Decimal(20, 2)
+  budget         String          @default("0")
+  contractValue  String          @default("0")
   remarks        String          @default("")
   status         ProjectStatus   @default(DRAFT)
   version        Int             @default(1)
@@ -230,20 +231,21 @@ model Project {
 }
 
 model ProjectMember {
-  orgId        String     @db.Uuid
-  projectId    String     @db.Uuid
-  membershipId String     @db.Uuid
-  project      Project    @relation(fields: [projectId, orgId], references: [id, orgId])
-  membership   Membership @relation(fields: [membershipId, orgId], references: [id, orgId])
+  id           String     @id @default(uuid()) @map("_id")
+  orgId        String
+  projectId    String
+  membershipId String
+  project      Project    @relation(fields: [projectId], references: [id])
+  membership   Membership @relation(fields: [membershipId], references: [id])
 
-  @@id([projectId, membershipId])
+  @@unique([projectId, membershipId])
 }
 
 model Site {
-  id        String   @id @default(uuid()) @db.Uuid
-  orgId     String   @db.Uuid
-  projectId String   @db.Uuid
-  project   Project  @relation(fields: [projectId, orgId], references: [id, orgId])
+  id        String   @id @default(uuid()) @map("_id")
+  orgId     String
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id])
   name      String
   address   String   @default("")
   createdAt DateTime @default(now())
@@ -252,10 +254,10 @@ model Site {
 }
 
 model Contact {
-  id        String  @id @default(uuid()) @db.Uuid
-  orgId     String  @db.Uuid
-  projectId String  @db.Uuid
-  project   Project @relation(fields: [projectId, orgId], references: [id, orgId])
+  id        String  @id @default(uuid()) @map("_id")
+  orgId     String
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id])
   name      String
   role      String
   email     String?
@@ -263,8 +265,8 @@ model Contact {
 }
 
 model Material {
-  id           String       @id @default(uuid()) @db.Uuid
-  orgId        String       @db.Uuid
+  id           String       @id @default(uuid()) @map("_id")
+  orgId        String
   organization Organization @relation(fields: [orgId], references: [id])
   sku          String
   name         String
@@ -272,8 +274,8 @@ model Material {
   description  String       @default("")
   uom          String       @default("Nos")
   precision    Int          @default(0)
-  standardRate Decimal      @default(0) @db.Decimal(20, 2)
-  taxRate      Decimal      @default(0) @db.Decimal(5, 2)
+  standardRate String       @default("0")
+  taxRate      String       @default("0")
   active       Boolean      @default(true)
   items        BoqItem[]
 
@@ -282,10 +284,10 @@ model Material {
 }
 
 model WorkOrder {
-  id         String              @id @default(uuid()) @db.Uuid
-  orgId      String              @db.Uuid
-  projectId  String              @db.Uuid
-  project    Project             @relation(fields: [projectId, orgId], references: [id, orgId])
+  id         String              @id @default(uuid()) @map("_id")
+  orgId      String
+  projectId  String
+  project    Project             @relation(fields: [projectId], references: [id])
   number     String
   version    Int                 @default(1)
   approvedAt DateTime?
@@ -298,8 +300,8 @@ model WorkOrder {
 }
 
 model WorkOrderRevision {
-  id          String    @id @default(uuid()) @db.Uuid
-  workOrderId String    @db.Uuid
+  id          String    @id @default(uuid()) @map("_id")
+  workOrderId String
   workOrder   WorkOrder @relation(fields: [workOrderId], references: [id])
   version     Int
   snapshot    Json
@@ -310,16 +312,16 @@ model WorkOrderRevision {
 }
 
 model BoqItem {
-  id               String           @id @default(uuid()) @db.Uuid
-  orgId            String           @db.Uuid
-  workOrderId      String           @db.Uuid
-  workOrder        WorkOrder        @relation(fields: [workOrderId, orgId], references: [id, orgId])
-  materialId       String           @db.Uuid
-  material         Material         @relation(fields: [materialId, orgId], references: [id, orgId])
-  ordered          Decimal          @db.Decimal(20, 4)
-  supplyRate       Decimal          @db.Decimal(20, 2)
-  installationRate Decimal          @db.Decimal(20, 2)
-  taxRate          Decimal          @default(0) @db.Decimal(5, 2)
+  id               String           @id @default(uuid()) @map("_id")
+  orgId            String
+  workOrderId      String
+  workOrder        WorkOrder        @relation(fields: [workOrderId], references: [id])
+  materialId       String
+  material         Material         @relation(fields: [materialId], references: [id])
+  ordered          String
+  supplyRate       String
+  installationRate String
+  taxRate          String           @default("0")
   version          Int              @default(1)
   openings         OpeningBalance[]
   movements        StockMovement[]
@@ -332,8 +334,8 @@ model BoqItem {
 }
 
 model Supplier {
-  id        String          @id @default(uuid()) @db.Uuid
-  orgId     String          @db.Uuid
+  id        String          @id @default(uuid()) @map("_id")
+  orgId     String
   name      String
   email     String?
   taxId     String?
@@ -346,17 +348,17 @@ model Supplier {
 }
 
 model PurchaseOrder {
-  id         String         @id @default(uuid()) @db.Uuid
-  orgId      String         @db.Uuid
-  projectId  String         @db.Uuid
-  project    Project        @relation(fields: [projectId, orgId], references: [id, orgId])
-  supplierId String         @db.Uuid
-  supplier   Supplier       @relation(fields: [supplierId, orgId], references: [id, orgId])
+  id         String         @id @default(uuid()) @map("_id")
+  orgId      String
+  projectId  String
+  project    Project        @relation(fields: [projectId], references: [id])
+  supplierId String
+  supplier   Supplier       @relation(fields: [supplierId], references: [id])
   number     String
   status     ApprovalStatus @default(DRAFT)
   version    Int            @default(1)
-  createdBy  String         @db.Uuid
-  approvedBy String?        @db.Uuid
+  createdBy  String
+  approvedBy String?
   createdAt  DateTime       @default(now())
   lines      PurchaseLine[]
 
@@ -365,14 +367,14 @@ model PurchaseOrder {
 }
 
 model PurchaseLine {
-  id              String        @id @default(uuid()) @db.Uuid
-  orgId           String        @db.Uuid
-  purchaseOrderId String        @db.Uuid
-  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId, orgId], references: [id, orgId])
-  boqItemId       String        @db.Uuid
-  boqItem         BoqItem       @relation(fields: [boqItemId, orgId], references: [id, orgId])
-  quantity        Decimal       @db.Decimal(20, 4)
-  rate            Decimal       @db.Decimal(20, 2)
+  id              String        @id @default(uuid()) @map("_id")
+  orgId           String
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+  boqItemId       String
+  boqItem         BoqItem       @relation(fields: [boqItemId], references: [id])
+  quantity        String
+  rate            String
   dispatches      Dispatch[]
 
   @@unique([id, orgId])
@@ -380,12 +382,12 @@ model PurchaseLine {
 }
 
 model Dispatch {
-  id             String         @id @default(uuid()) @db.Uuid
-  orgId          String         @db.Uuid
-  purchaseLineId String         @db.Uuid
-  purchaseLine   PurchaseLine   @relation(fields: [purchaseLineId, orgId], references: [id, orgId])
+  id             String         @id @default(uuid()) @map("_id")
+  orgId          String
+  purchaseLineId String
+  purchaseLine   PurchaseLine   @relation(fields: [purchaseLineId], references: [id])
   challan        String
-  quantity       Decimal        @db.Decimal(20, 4)
+  quantity       String
   dispatchedAt   DateTime       @default(now())
   receipts       GoodsReceipt[]
 
@@ -394,29 +396,29 @@ model Dispatch {
 }
 
 model GoodsReceipt {
-  id         String   @id @default(uuid()) @db.Uuid
-  orgId      String   @db.Uuid
-  dispatchId String   @db.Uuid
-  dispatch   Dispatch @relation(fields: [dispatchId, orgId], references: [id, orgId])
+  id         String   @id @default(uuid()) @map("_id")
+  orgId      String
+  dispatchId String
+  dispatch   Dispatch @relation(fields: [dispatchId], references: [id])
   reference  String
-  accepted   Decimal  @db.Decimal(20, 4)
-  damaged    Decimal  @db.Decimal(20, 4)
-  rejected   Decimal  @db.Decimal(20, 4)
+  accepted   String
+  damaged    String
+  rejected   String
   createdAt  DateTime @default(now())
 
   @@unique([orgId, dispatchId, reference])
 }
 
 model ImportBatch {
-  id         String           @id @default(uuid()) @db.Uuid
-  orgId      String           @db.Uuid
-  projectId  String           @db.Uuid
-  project    Project          @relation(fields: [projectId, orgId], references: [id, orgId])
+  id         String           @id @default(uuid()) @map("_id")
+  orgId      String
+  projectId  String
+  project    Project          @relation(fields: [projectId], references: [id])
   sourceHash String
   sourceName String
   mapping    Json
   source     Json
-  asOf       DateTime         @db.Date
+  asOf       DateTime
   createdAt  DateTime         @default(now())
   reversedAt DateTime?
   openings   OpeningBalance[]
@@ -425,33 +427,33 @@ model ImportBatch {
 }
 
 model OpeningBalance {
-  id                 String      @id @default(uuid()) @db.Uuid
-  orgId              String      @db.Uuid
-  batchId            String      @db.Uuid
+  id                 String      @id @default(uuid()) @map("_id")
+  orgId              String
+  batchId            String
   batch              ImportBatch @relation(fields: [batchId], references: [id])
-  boqItemId          String      @db.Uuid
-  boqItem            BoqItem     @relation(fields: [boqItemId, orgId], references: [id, orgId])
-  supplied           Decimal     @db.Decimal(20, 4)
-  installed          Decimal     @db.Decimal(20, 4)
-  supplyBilled       Decimal     @db.Decimal(20, 4)
-  installationBilled Decimal     @db.Decimal(20, 4)
+  boqItemId          String
+  boqItem            BoqItem     @relation(fields: [boqItemId], references: [id])
+  supplied           String
+  installed          String
+  supplyBilled       String
+  installationBilled String
   sourceRow          Int
 
   @@unique([batchId, boqItemId])
 }
 
 model StockMovement {
-  id          String       @id @default(uuid()) @db.Uuid
-  orgId       String       @db.Uuid
-  projectId   String       @db.Uuid
-  project     Project      @relation(fields: [projectId, orgId], references: [id, orgId])
-  boqItemId   String       @db.Uuid
-  boqItem     BoqItem      @relation(fields: [boqItemId, orgId], references: [id, orgId])
+  id          String       @id @default(uuid()) @map("_id")
+  orgId       String
+  projectId   String
+  project     Project      @relation(fields: [projectId], references: [id])
+  boqItemId   String
+  boqItem     BoqItem      @relation(fields: [boqItemId], references: [id])
   kind        MovementKind
-  quantity    Decimal      @db.Decimal(20, 4)
+  quantity    String
   reference   String
   reason      String
-  actorId     String       @db.Uuid
+  actorId     String
   effectiveAt DateTime     @default(now())
   createdAt   DateTime     @default(now())
 
@@ -459,20 +461,20 @@ model StockMovement {
 }
 
 model Installation {
-  id         String         @id @default(uuid()) @db.Uuid
-  orgId      String         @db.Uuid
-  projectId  String         @db.Uuid
-  project    Project        @relation(fields: [projectId, orgId], references: [id, orgId])
-  boqItemId  String         @db.Uuid
-  boqItem    BoqItem        @relation(fields: [boqItemId, orgId], references: [id, orgId])
-  quantity   Decimal        @db.Decimal(20, 4)
+  id         String         @id @default(uuid()) @map("_id")
+  orgId      String
+  projectId  String
+  project    Project        @relation(fields: [projectId], references: [id])
+  boqItemId  String
+  boqItem    BoqItem        @relation(fields: [boqItemId], references: [id])
+  quantity   String
   area       String
-  reportDate DateTime       @db.Date
+  reportDate DateTime
   notes      String         @default("")
   status     ApprovalStatus @default(DRAFT)
   reason     String?
-  createdBy  String         @db.Uuid
-  approvedBy String?        @db.Uuid
+  createdBy  String
+  approvedBy String?
   approvedAt DateTime?
   version    Int            @default(1)
   createdAt  DateTime       @default(now())
@@ -482,19 +484,19 @@ model Installation {
 }
 
 model Invoice {
-  id                 String              @id @default(uuid()) @db.Uuid
-  orgId              String              @db.Uuid
-  projectId          String              @db.Uuid
-  project            Project             @relation(fields: [projectId, orgId], references: [id, orgId])
+  id                 String              @id @default(uuid()) @map("_id")
+  orgId              String
+  projectId          String
+  project            Project             @relation(fields: [projectId], references: [id])
   number             String
   kind               String
   status             InvoiceStatus       @default(DRAFT)
   currency           String
-  subtotal           Decimal             @db.Decimal(20, 2)
-  tax                Decimal             @db.Decimal(20, 2)
-  retention          Decimal             @default(0) @db.Decimal(20, 2)
-  total              Decimal             @db.Decimal(20, 2)
-  dueDate            DateTime            @db.Date
+  subtotal           String
+  tax                String
+  retention          String              @default("0")
+  total              String
+  dueDate            DateTime
   issuedAt           DateTime?
   cancelledAt        DateTime?
   cancellationReason String?
@@ -508,26 +510,26 @@ model Invoice {
 }
 
 model InvoiceLine {
-  id        String  @id @default(uuid()) @db.Uuid
-  orgId     String  @db.Uuid
-  invoiceId String  @db.Uuid
-  invoice   Invoice @relation(fields: [invoiceId, orgId], references: [id, orgId])
-  boqItemId String  @db.Uuid
-  boqItem   BoqItem @relation(fields: [boqItemId, orgId], references: [id, orgId])
-  quantity  Decimal @db.Decimal(20, 4)
-  rate      Decimal @db.Decimal(20, 2)
-  taxRate   Decimal @db.Decimal(5, 2)
-  amount    Decimal @db.Decimal(20, 2)
+  id        String  @id @default(uuid()) @map("_id")
+  orgId     String
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id])
+  boqItemId String
+  boqItem   BoqItem @relation(fields: [boqItemId], references: [id])
+  quantity  String
+  rate      String
+  taxRate   String
+  amount    String
 }
 
 model Payment {
-  id          String              @id @default(uuid()) @db.Uuid
-  orgId       String              @db.Uuid
-  projectId   String              @db.Uuid
-  project     Project             @relation(fields: [projectId, orgId], references: [id, orgId])
-  amount      Decimal             @db.Decimal(20, 2)
+  id          String              @id @default(uuid()) @map("_id")
+  orgId       String
+  projectId   String
+  project     Project             @relation(fields: [projectId], references: [id])
+  amount      String
   reference   String
-  receivedAt  DateTime            @db.Date
+  receivedAt  DateTime
   createdAt   DateTime            @default(now())
   allocations PaymentAllocation[]
 
@@ -536,29 +538,29 @@ model Payment {
 }
 
 model PaymentAllocation {
-  id        String   @id @default(uuid()) @db.Uuid
-  orgId     String   @db.Uuid
-  paymentId String   @db.Uuid
-  payment   Payment  @relation(fields: [paymentId, orgId], references: [id, orgId])
-  invoiceId String   @db.Uuid
-  invoice   Invoice  @relation(fields: [invoiceId, orgId], references: [id, orgId])
-  amount    Decimal  @db.Decimal(20, 2)
+  id        String   @id @default(uuid()) @map("_id")
+  orgId     String
+  paymentId String
+  payment   Payment  @relation(fields: [paymentId], references: [id])
+  invoiceId String
+  invoice   Invoice  @relation(fields: [invoiceId], references: [id])
+  amount    String
   createdAt DateTime @default(now())
 
   @@unique([paymentId, invoiceId])
 }
 
 model Task {
-  id          String    @id @default(uuid()) @db.Uuid
-  orgId       String    @db.Uuid
-  projectId   String    @db.Uuid
-  project     Project   @relation(fields: [projectId, orgId], references: [id, orgId])
+  id          String    @id @default(uuid()) @map("_id")
+  orgId       String
+  projectId   String
+  project     Project   @relation(fields: [projectId], references: [id])
   title       String
   description String    @default("")
-  assigneeId  String?   @db.Uuid
+  assigneeId  String?
   priority    String    @default("MEDIUM")
   status      String    @default("TODO")
-  dueDate     DateTime? @db.Date
+  dueDate     DateTime?
   version     Int       @default(1)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -567,36 +569,37 @@ model Task {
 }
 
 model Document {
-  id        String   @id @default(uuid()) @db.Uuid
-  orgId     String   @db.Uuid
-  projectId String   @db.Uuid
-  project   Project  @relation(fields: [projectId, orgId], references: [id, orgId])
+  id        String   @id @default(uuid()) @map("_id")
+  orgId     String
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id])
   name      String
   objectKey String   @unique
   mimeType  String
   size      Int
   status    String   @default("QUARANTINED")
-  createdBy String   @db.Uuid
+  createdBy String
   createdAt DateTime @default(now())
 
   @@index([orgId, projectId])
 }
 
 model Idempotency {
-  orgId     String   @db.Uuid
+  id        String   @id @default(uuid()) @map("_id")
+  orgId     String
   key       String
   hash      String
   result    Json
   createdAt DateTime @default(now())
 
-  @@id([orgId, key])
+  @@unique([orgId, key])
 }
 
 model Audit {
-  id           String        @id @default(uuid()) @db.Uuid
-  orgId        String?       @db.Uuid
+  id           String        @id @default(uuid()) @map("_id")
+  orgId        String?
   organization Organization? @relation(fields: [orgId], references: [id])
-  actorId      String?       @db.Uuid
+  actorId      String?
   action       String
   resourceId   String?
   detail       Json
@@ -606,8 +609,9 @@ model Audit {
 }
 
 model Outbox {
-  id           String        @id @default(uuid()) @db.Uuid
-  orgId        String?       @db.Uuid
+  projectId    String?
+  id           String        @id @default(uuid()) @map("_id")
+  orgId        String?
   organization Organization? @relation(fields: [orgId], references: [id])
   kind         String
   payload      Json
@@ -616,6 +620,14 @@ model Outbox {
   availableAt  DateTime      @default(now())
   processedAt  DateTime?
   lastError    String?
+  leaseToken   String?
+  leaseUntil   DateTime?
 
   @@index([processedAt, availableAt])
+  @@index([orgId, kind, projectId, availableAt])
+}
+
+model WriteLock {
+  id       String @id @map("_id")
+  revision String
 }
