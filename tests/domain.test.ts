@@ -37,6 +37,18 @@ describe("domain invariants", () => {
     );
     expect(validateDatabaseUrl).not.toThrow("invalid-secret");
   });
+  it("accepts MongoDB replica-set connection strings with multiple hosts and ports", () => {
+    const DATABASE_URL =
+      "mongodb://user:secret@mongo1.example.com:27017,mongo2.example.com:27017/pmt?replicaSet=rs0";
+    expect(
+      validateEnvironment({
+        DATABASE_URL,
+        APP_ORIGIN: "https://example.com",
+        NODE_ENV: "production",
+        IDENTITY_MAIL_KEY: "a".repeat(64),
+      }).DATABASE_URL,
+    ).toBe(DATABASE_URL);
+  });
   it("validates the hosting port and defaults the local API port", () => {
     const env = {
       DATABASE_URL: "mongodb+srv://user:secret@example.mongodb.net/pmt",

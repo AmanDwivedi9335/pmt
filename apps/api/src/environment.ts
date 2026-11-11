@@ -1,14 +1,17 @@
 import { z } from "@pmt/shared";
+import ConnectionString from "mongodb-connection-string-url";
+
 export function validateEnvironment(env: NodeJS.ProcessEnv) {
   const port = z.coerce.number().int().min(1).max(65535);
   const schema = z.object({
-    DATABASE_URL: z
-      .string()
-      .url()
-      .refine(
-        (v) => /^mongodb(?:\+srv)?:\/\//.test(v),
-        "MongoDB connection URL required",
-      ),
+    DATABASE_URL: z.string().refine((value) => {
+      try {
+        new ConnectionString(value);
+        return true;
+      } catch {
+        return false;
+      }
+    }, "MongoDB connection URL required"),
     APP_ORIGIN: z.string().url(),
     NODE_ENV: z
       .enum(["development", "test", "production"])
