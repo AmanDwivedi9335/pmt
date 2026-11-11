@@ -2,7 +2,9 @@ name: Required checks
 on: [push, pull_request]
 jobs:
   verify:
-    runs-on: ubuntu-24.04
+    # MongoDB 8.0 can exit at startup on the Ubuntu 24.04 runner kernel.
+    # https://github.com/actions/runner-images/issues/15005
+    runs-on: ubuntu-22.04
     env:
       DATABASE_URL: mongodb://127.0.0.1:27018/pmt_test?replicaSet=pmt&directConnection=true
       TEST_DATABASE_URL: mongodb://127.0.0.1:27018/pmt_test?replicaSet=pmt&directConnection=true
@@ -14,7 +16,15 @@ jobs:
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - run: pnpm db:generate && pnpm --filter @pmt/shared build
-      - run: docker compose up -d --wait mongodb
+      - name: Start MongoDB replica set
+        id: mongodb
+        run: docker compose up -d --wait --wait-timeout 90 mongodb
+      - name: Collect MongoDB startup diagnostics
+        if: failure() && steps.mongodb.outcome == 'failure'
+        run: |
+          uname -r
+          docker compose ps --all mongodb
+          docker compose logs --no-color mongodb | tee mongodb.log
       - run: pnpm db:push
       - run: pnpm lint && pnpm typecheck && pnpm test && pnpm build
       - run: pnpm exec playwright install --with-deps msedge
