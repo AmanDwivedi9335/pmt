@@ -42,7 +42,18 @@ Scanner integration: set MALWARE_SCAN_URL to a trusted HTTPS service accepting r
 
 Build API/web images from repository root with infra Dockerfiles. Supply secrets from the deployment platform; do not bake `.env` into images. The web reverse proxy uses API_INTERNAL_URL; configure it at build and runtime consistently for the target environment. Use TLS at ingress. APP_ORIGIN must exactly match the public origin; production sets NODE_ENV=production, enabling Secure cookies. Services run as a nonroot user.
 
-For a Render Node web service, leave **Root Directory** blank so the build can access the whole pnpm workspace. Set **Build Command** to `pnpm install --frozen-lockfile --prod=false && pnpm --filter @pmt/api build` and **Start Command** to `pnpm --filter @pmt/api start`. The API build generates Prisma Client and compiles `@pmt/shared` before compiling the API. Keep database index synchronization in the release step.
+### Render API service
+
+| Render setting    | Value                                                                         |
+| ----------------- | ----------------------------------------------------------------------------- |
+| Root Directory    | Leave blank to use the repository root                                        |
+| Build Command     | `pnpm install --frozen-lockfile --prod=false && pnpm --filter @pmt/api build` |
+| Start Command     | `pnpm --filter @pmt/api start`                                                |
+| Health Check Path | `/api/v1/ready`                                                               |
+
+In **Environment**, set `NODE_VERSION` to the supported Node 22 range (`>=22.12 <23`), `NODE_ENV=production`, and `APP_ORIGIN` to the exact HTTPS origin of the frontend without a trailing slash. Set `DATABASE_URL` to the hosted MongoDB replica set URI, including the database name. For Atlas, use the database user's URI from **Connect → Drivers** and allow connections from the Render service's outbound IP ranges. Keep `DATABASE_URL` and the existing 64-character hex `IDENTITY_MAIL_KEY` in Render's environment settings. Render sets `PORT`, which the API uses when present.
+
+Before the first deploy against a new MongoDB database, run `pnpm db:push` from an environment with index-management credentials for that database. Deploy the latest commit and check that `/api/v1/ready` responds successfully. A fresh database needs a separate data transfer if you want to retain existing accounts and records.
 
 Use a separate index-management role for release commands and a restricted runtime role. Grant the runtime identity only find and insert privileges on the StockMovement and Audit collections to enforce append-only records. Separate databases, buckets, SMTP and credentials for local/staging/production. Use least-privilege S3 access and database network rules. API DB health `/api/v1/ready`; process health `/api/v1/health`. Set liveness/readiness probes separately.
 

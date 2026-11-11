@@ -24,14 +24,30 @@ describe("domain invariants", () => {
         IDENTITY_MAIL_KEY: "a".repeat(64),
       }),
     ).toThrow("HTTPS");
-    expect(() =>
+    const invalidDatabaseUrl = "postgresql://user:invalid-secret@db/pmt";
+    const validateDatabaseUrl = () =>
       validateEnvironment({
-        DATABASE_URL: "invalid-secret",
+        DATABASE_URL: invalidDatabaseUrl,
         APP_ORIGIN: "https://example.com",
         NODE_ENV: "production",
         IDENTITY_MAIL_KEY: "a".repeat(64),
-      }),
-    ).toThrow("DATABASE_URL");
+      });
+    expect(validateDatabaseUrl).toThrow(
+      "Set DATABASE_URL to a MongoDB connection string",
+    );
+    expect(validateDatabaseUrl).not.toThrow("invalid-secret");
+  });
+  it("validates the hosting port and defaults the local API port", () => {
+    const env = {
+      DATABASE_URL: "mongodb+srv://user:secret@example.mongodb.net/pmt",
+      APP_ORIGIN: "https://example.com",
+      IDENTITY_MAIL_KEY: "a".repeat(64),
+    };
+    expect(validateEnvironment(env)).toMatchObject({ API_PORT: 4000 });
+    expect(validateEnvironment({ ...env, PORT: "10000" }).PORT).toBe(10000);
+    expect(() => validateEnvironment({ ...env, PORT: "65536" })).toThrow(
+      "PORT",
+    );
   });
   it("calculates the supplied Bagmane acceptance figures exactly", () => {
     expect(balances("2600", "500", "192")).toEqual({
