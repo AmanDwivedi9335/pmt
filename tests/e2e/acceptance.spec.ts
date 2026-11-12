@@ -251,6 +251,10 @@ test("organization completes setup, import, receipt, independent installation ap
   await engineer
     .getByLabel("Project", { exact: true })
     .selectOption(project.id);
+  await engineer.getByRole("button", { name: "Record project visit" }).click();
+  await expect(
+    engineer.getByRole("button", { name: "Project recorded" }),
+  ).toBeDisabled();
   await expect(
     engineer.getByLabel("Site photos and videos", { exact: false }),
   ).toBeVisible();
@@ -454,4 +458,27 @@ test("organization completes setup, import, receipt, independent installation ap
       .getByRole("region", { name: "Project portfolio" })
       .getByText("₹744", { exact: true }),
   ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Attendance reports", exact: true })
+    .click();
+  const table = page.getByRole("table", {
+    name: "Employee attendance by project",
+  });
+  const engineerRow = table
+    .getByRole("row")
+    .filter({ hasText: "Site Engineer" })
+    .filter({ hasText: "Bagmane Capital Tech Park" });
+  await expect(engineerRow).toBeVisible();
+  await engineerRow.getByText("View visit", { exact: true }).click();
+  await expect(
+    engineerRow.getByText("12.97160, 77.59460", { exact: false }),
+  ).toBeVisible();
+  await expect(
+    engineerRow.getByText("12.97200, 77.59500", { exact: false }),
+  ).toBeVisible();
+  await page.getByLabel("Period", { exact: false }).selectOption("monthly");
+  await page.getByLabel("Employee", { exact: true }).fill(siteEmail);
+  await page.getByRole("button", { name: "Apply filters" }).click();
+  await expect(table.getByRole("row")).toHaveCount(2);
+  await expect(engineerRow).toBeVisible();
 });

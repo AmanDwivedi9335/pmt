@@ -229,6 +229,20 @@ describe("phase 2 project vertical slice", () => {
     expect(visit.punchInLocation).toEqual(point);
     expect(Date.parse(visit.punchedInAt)).toBeGreaterThan(0);
     expect((await current()).body.visit).toEqual(visit);
+    const projectLog = { visitId: visit.id, projectId };
+    expect(
+      (
+        await punch(attendance + "/projects", {
+          ...projectLog,
+          projectId: randomUUID(),
+        })
+      ).status,
+    ).toBe(403);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const recorded = await punch(attendance + "/projects", projectLog);
+      expect(recorded.status).toBe(201);
+      expect(recorded.body.visit.projectIds).toEqual([projectId]);
+    }
     expect(
       (
         await punch(attendance + "/punch-out", {
@@ -304,6 +318,179 @@ describe("phase 2 project vertical slice", () => {
         if (previous[key] === undefined) delete process.env[key];
         else process.env[key] = previous[key];
       }
+    }
+  });
+
+  it("reports employee attendance by project in IST and counts received media once", async () => {
+    const member = await db.membership.findFirstOrThrow({
+      where: { orgId, user: { name: "Engineer" } },
+    });
+    const firstProject = await db.project.findUniqueOrThrow({
+      where: { id: projectId },
+    });
+    const secondProject = await db.project.create({
+      data: {
+        orgId,
+        clientId: firstProject.clientId,
+        name: "Second site",
+        code: "SECOND-SITE",
+        city: "Bangalore",
+      },
+    });
+    const point = { latitude: 12.9716, longitude: 77.5946, accuracy: 10 };
+    // 18:30 UTC is midnight on the next calendar day in India.
+    const before = await db.siteVisit.create({
+      data: {
+        orgId,
+        membershipId: member.id,
+        punchedInAt: new Date("2025-05-31T18:29:59.999Z"),
+        punchInLocation: point,
+      },
+    });
+    const visit = await db.siteVisit.create({
+      data: {
+        orgId,
+        membershipId: member.id,
+        punchedInAt: new Date("2025-05-31T18:30:00Z"),
+        punchedOutAt: new Date("2025-06-01T03:30:00Z"),
+        punchInLocation: point,
+        punchOutLocation: point,
+        projectIds: [projectId],
+      },
+    });
+    const open = await db.siteVisit.create({
+      data: {
+        orgId,
+        membershipId: member.id,
+        punchedInAt: new Date("2025-06-30T18:29:59.999Z"),
+        punchInLocation: point,
+        projectIds: [projectId],
+      },
+    });
+    const attachments = await Promise.all(
+      [
+        {
+          name: "Verified.jpg",
+          mimeType: "image/jpeg",
+          status: "CLEAN",
+          projectId,
+        },
+        {
+          name: "Authorized only.jpg",
+          mimeType: "image/jpeg",
+          status: "QUARANTINED",
+          projectId,
+        },
+        {
+          name: "Queued.mp4",
+          mimeType: "video/mp4",
+          status: "QUARANTINED",
+          projectId: secondProject.id,
+        },
+        {
+          name: "Rejected.jpg",
+          mimeType: "image/jpeg",
+          status: "REJECTED",
+          projectId: secondProject.id,
+        },
+      ].map((file) =>
+        db.document.create({
+          data: {
+            ...file,
+            orgId,
+            siteVisitId: visit.id,
+            createdBy: member.userId,
+            size: 16,
+            objectKey: randomUUID(),
+          },
+        }),
+      ),
+    );
+    const queued = await db.outbox.create({
+      data: {
+        orgId,
+        kind: "SCAN",
+        dedupeKey: `scan:${attachments[2].id}`,
+        payload: { documentId: attachments[2].id },
+      },
+    });
+    try {
+      const daily =
+        "organizations/attendance-report?period=daily&date=2025-06-01";
+      const monthly =
+        "organizations/attendance-report?period=monthly&date=2025-06-01";
+      expect(
+        (await engineer.get(`/api/v1/${daily}`).set("x-organization-id", orgId))
+          .status,
+      ).toBe(403);
+      const response = await get(daily);
+      expect(response.status).toBe(200);
+      expect(response.body.totals).toMatchObject({
+        visits: 1,
+        open: 0,
+        photos: 2,
+        videos: 1,
+        pending: 1,
+        rejected: 1,
+      });
+      expect(response.body.rows).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            employee: expect.objectContaining({ name: "Operations" }),
+            visits: [],
+          }),
+          expect.objectContaining({
+            project: expect.objectContaining({ id: projectId }),
+            visits: [
+              expect.objectContaining({
+                id: visit.id,
+                punchOutLocation: point,
+                files: [expect.objectContaining({ name: "Verified.jpg" })],
+              }),
+            ],
+          }),
+          expect.objectContaining({
+            project: expect.objectContaining({ id: secondProject.id }),
+            visits: [
+              expect.objectContaining({
+                id: visit.id,
+                files: expect.arrayContaining([
+                  expect.objectContaining({ name: "Queued.mp4" }),
+                ]),
+              }),
+            ],
+          }),
+        ]),
+      );
+      const filtered = await get(
+        `${monthly}&projectId=${projectId}&search=engineer`,
+      );
+      expect(filtered.status).toBe(200);
+      expect(filtered.body.totals).toEqual({
+        employees: 1,
+        visits: 2,
+        open: 1,
+        photos: 1,
+        videos: 0,
+        pending: 0,
+        rejected: 0,
+      });
+      expect(
+        filtered.body.rows[0].visits.map((entry: { id: string }) => entry.id),
+      ).toEqual([visit.id, open.id]);
+      const unlinked = await get(
+        "organizations/attendance-report?period=monthly&date=2025-05-01&projectId=unlinked&search=engineer",
+      );
+      expect(unlinked.body.rows[0].visits[0].id).toBe(before.id);
+    } finally {
+      await db.outbox.delete({ where: { id: queued.id } });
+      await db.document.deleteMany({
+        where: { id: { in: attachments.map(({ id }) => id) } },
+      });
+      await db.siteVisit.deleteMany({
+        where: { id: { in: [before.id, visit.id, open.id] } },
+      });
+      await db.project.delete({ where: { id: secondProject.id } });
     }
   });
 });

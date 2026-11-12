@@ -11,6 +11,7 @@ type Visit = {
   punchInLocation: Point;
   punchedOutAt: string | null;
   punchOutLocation: Point | null;
+  projectIds: string[];
 };
 type Project = { id: string; code: string; name: string };
 type ProjectPage = {
@@ -90,6 +91,8 @@ export default function SiteEngineerDashboard({
   const [loading, setLoading] = useState(true);
   const [punching, setPunching] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [recordError, setRecordError] = useState("");
   const [error, setError] = useState("");
   const [uploadResult, setUploadResult] = useState("");
   const [uploadError, setUploadError] = useState("");
@@ -149,8 +152,25 @@ export default function SiteEngineerDashboard({
     void refresh();
   }, [refresh]);
   useEffect(() => {
-    if (active && canUpload) void loadProjects(1);
-  }, [active, canUpload, loadProjects]);
+    if (active) void loadProjects(1);
+  }, [active, loadProjects]);
+
+  async function recordProject() {
+    if (!active || !projectId || recording || punching || uploading) return;
+    setRecording(true);
+    setRecordError("");
+    try {
+      const data = await api(attendance + "/projects", "POST", {
+        visitId: visit.id,
+        projectId,
+      });
+      setVisit(data.visit);
+    } catch (err) {
+      setRecordError((err as Error).message);
+    } finally {
+      setRecording(false);
+    }
+  }
 
   async function punch() {
     setPunching(true);
@@ -165,6 +185,7 @@ export default function SiteEngineerDashboard({
         : await api(attendance + "/punch-in", "POST", point);
       setVisit(data.visit);
       setProjectId("");
+      setRecordError("");
       setProjects(null);
       setFiles([]);
       setUploadResult("");
@@ -178,7 +199,15 @@ export default function SiteEngineerDashboard({
 
   async function upload(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!active || !projectId || !files.length || punching || uploading) return;
+    if (
+      !active ||
+      !projectId ||
+      !files.length ||
+      punching ||
+      uploading ||
+      recording
+    )
+      return;
     const picker = e.currentTarget.querySelector("input[type=file]");
     const base = `projects/${projectId}/documents/`;
     setUploading(true);
@@ -268,7 +297,7 @@ export default function SiteEngineerDashboard({
         <div className="site-day-actions">
           {visit !== undefined && (
             <Button
-              disabled={loading || punching || uploading}
+              disabled={loading || punching || uploading || recording}
               onClick={() => void punch()}
             >
               <MapPin size={16} aria-hidden="true" />
@@ -282,7 +311,7 @@ export default function SiteEngineerDashboard({
           {error && (
             <Button
               variant="outline"
-              disabled={loading || punching || uploading}
+              disabled={loading || punching || uploading || recording}
               onClick={() => void refresh()}
             >
               Refresh attendance
@@ -298,13 +327,11 @@ export default function SiteEngineerDashboard({
         </div>
         {!active ? (
           <p>Punch in to upload photos and videos from the site.</p>
-        ) : !canUpload ? (
-          <p>Your role does not have project upload access.</p>
         ) : (
           <>
             <p>
-              Choose an assigned project to add photos and videos to its
-              documents.
+              Choose an assigned project to record your visit or upload photos
+              and videos.
             </p>
             {projectsError && (
               <div className="site-day-message" role="alert">
@@ -322,12 +349,13 @@ export default function SiteEngineerDashboard({
                   <select
                     id="site-media-project"
                     value={projectId}
-                    disabled={uploading || punching}
+                    disabled={uploading || punching || recording}
                     onChange={(e) => {
                       setProjectId(e.target.value);
                       setFiles([]);
                       setUploadResult("");
                       setUploadError("");
+                      setRecordError("");
                     }}
                   >
                     <option value="">Select a project</option>
@@ -339,6 +367,32 @@ export default function SiteEngineerDashboard({
                   </select>
                 </div>
                 {projectId && (
+                  <div className="site-day-actions">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={
+                        uploading ||
+                        punching ||
+                        recording ||
+                        visit.projectIds?.includes(projectId)
+                      }
+                      onClick={() => void recordProject()}
+                    >
+                      {recording
+                        ? "Recording…"
+                        : visit.projectIds?.includes(projectId)
+                          ? "Project recorded"
+                          : "Record project visit"}
+                    </Button>
+                  </div>
+                )}
+                {recordError && (
+                  <div className="site-day-message" role="alert">
+                    {recordError}
+                  </div>
+                )}
+                {canUpload && projectId && (
                   <div className="site-media-field">
                     <label htmlFor="site-media-files">
                       Site photos and videos
@@ -350,7 +404,7 @@ export default function SiteEngineerDashboard({
                       type="file"
                       accept={siteMediaTypes.join(",")}
                       multiple
-                      disabled={uploading || punching}
+                      disabled={uploading || punching || recording}
                       onChange={(e) =>
                         setFiles(Array.from(e.currentTarget.files ?? []))
                       }
@@ -361,20 +415,26 @@ export default function SiteEngineerDashboard({
                   </div>
                 )}
                 <div className="site-day-actions">
-                  <Button
-                    type="submit"
-                    disabled={
-                      !projectId || !files.length || uploading || punching
-                    }
-                  >
-                    <Upload size={15} aria-hidden="true" />
-                    {uploading ? "Uploading…" : "Upload site media"}
-                  </Button>
+                  {canUpload && (
+                    <Button
+                      type="submit"
+                      disabled={
+                        !projectId ||
+                        !files.length ||
+                        uploading ||
+                        punching ||
+                        recording
+                      }
+                    >
+                      <Upload size={15} aria-hidden="true" />
+                      {uploading ? "Uploading…" : "Upload site media"}
+                    </Button>
+                  )}
                   {projectId && (
                     <Button
                       type="button"
                       variant="outline"
-                      disabled={uploading || punching}
+                      disabled={uploading || punching || recording}
                       onClick={() => onOpenDocuments(projectId)}
                     >
                       Project documents

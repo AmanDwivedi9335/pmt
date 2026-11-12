@@ -34,6 +34,7 @@ import {
 } from "./collaboration";
 import { ReportsController } from "./reports";
 import { SiteVisitsController } from "./site-visits";
+import { AttendanceReportsController } from "./attendance-reports";
 export const logger = pino({
   redact: [
     "req.headers.cookie",
@@ -123,6 +124,7 @@ class HealthController {
     CollaborationController,
     StaffWorkspaceController,
     SiteVisitsController,
+    AttendanceReportsController,
     ReportsController,
   ],
   providers: [Db, Security, AuthService, Operations],

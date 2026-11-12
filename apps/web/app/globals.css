@@ -667,6 +667,103 @@ nav button.active {
   white-space: pre-line;
   overflow-wrap: anywhere;
 }
+.attendance-report {
+  display: grid;
+  gap: 14px;
+}
+.attendance-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 155px), 1fr));
+  align-items: end;
+  gap: 12px;
+}
+.attendance-filters label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.attendance-note {
+  font-size: 12px;
+  line-height: 1.5;
+}
+.attendance-totals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 125px), 1fr));
+  gap: 12px;
+}
+.attendance-totals .card {
+  display: grid;
+  gap: 6px;
+  padding: 15px;
+  font-size: 12px;
+}
+.attendance-totals strong {
+  font-size: 22px;
+}
+.attendance-table {
+  overflow-x: auto;
+}
+.attendance-table tbody th,
+.attendance-table td {
+  text-align: left;
+  vertical-align: top;
+}
+.attendance-table tbody th {
+  font-weight: normal;
+  text-transform: none;
+  letter-spacing: normal;
+}
+.attendance-table small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 4px;
+}
+.attendance-table time {
+  white-space: nowrap;
+}
+.attendance-table summary {
+  cursor: pointer;
+  white-space: nowrap;
+}
+.attendance-visits,
+.attendance-files {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+}
+.attendance-visit {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 8px;
+}
+.attendance-visit dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+.attendance-visit dt {
+  font-size: 11px;
+  color: var(--muted);
+}
+.attendance-visit dd {
+  margin: 3px 0 0;
+}
+.attendance-files li {
+  border-top: 1px solid var(--line);
+  padding-top: 6px;
+  overflow-wrap: anywhere;
+}
+.attendance-pages {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
 .tile-icon {
   width: 37px;
   height: 37px;

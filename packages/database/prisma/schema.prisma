@@ -576,8 +576,10 @@ model SiteVisit {
   punchInLocation  Json
   punchedOutAt     DateTime?
   punchOutLocation Json?
+  projectIds       String[]  @default([])
 
   @@index([orgId, membershipId, punchedInAt])
+  @@index([orgId, punchedInAt])
 }
 
 model Document {
@@ -595,6 +597,7 @@ model Document {
   createdAt   DateTime @default(now())
 
   @@index([orgId, projectId])
+  @@index([orgId, siteVisitId])
 }
 
 model Idempotency {

@@ -53,6 +53,7 @@ import {
 } from "recharts";
 import { Button, Modal } from "@pmt/ui";
 import SiteEngineerDashboard from "./site-engineer-dashboard";
+import AttendanceReport from "./attendance-report";
 type Api = (
   path: string,
   method?: string,
@@ -177,7 +178,11 @@ export default function Workspace({
     setError("");
     setData(null);
     try {
-      if (view === "Dashboard" && siteEngineer) return;
+      if (
+        (view === "Dashboard" && siteEngineer) ||
+        view === "Attendance reports"
+      )
+        return;
       const list = await api("projects");
       setProjects(list.rows);
       if (view === "Dashboard") setData(await api("dashboard"));
@@ -657,6 +662,7 @@ export default function Workspace({
     ["Billing", Receipt],
     ["Tasks", CheckSquare],
     ["Reports", BarChart3],
+    ["Attendance reports", CalendarClock],
     ["Documents", Files],
     ["Team", Users],
     ["Settings", Settings],
@@ -757,9 +763,11 @@ export default function Workspace({
         <nav>
           {nav
             .filter(([n]) =>
-              n === "My work"
-                ? can("project.view")
-                : !["Team", "Settings"].includes(n) || can("team.manage"),
+              n === "Attendance reports"
+                ? can("organization.manage")
+                : n === "My work"
+                  ? can("project.view")
+                  : !["Team", "Settings"].includes(n) || can("team.manage"),
             )
             .map(([name, Icon]) => (
               <button
@@ -816,7 +824,19 @@ export default function Workspace({
             <select
               aria-label="Organization"
               value={org}
-              onChange={(e) => setOrg(e.target.value)}
+              onChange={(e) => {
+                const nextOrg = e.target.value;
+                if (
+                  view === "Attendance reports" &&
+                  !me.memberships.some(
+                    (member: typeof membership) =>
+                      member.orgId === nextOrg &&
+                      member.role.permissions.includes("organization.manage"),
+                  )
+                )
+                  navigate("Dashboard");
+                setOrg(nextOrg);
+              }}
             >
               {me.memberships.map((m: any) => (
                 <option value={m.orgId} key={m.orgId}>
@@ -1048,6 +1068,12 @@ export default function Workspace({
             <div className="empty">
               Data could not be loaded. Use Retry above.
             </div>
+          ) : view === "Attendance reports" && can("organization.manage") ? (
+            <AttendanceReport
+              key={org}
+              api={api}
+              onOpenDocuments={(id) => open({ id }, "Documents")}
+            />
           ) : view === "Dashboard" && siteEngineer ? (
             <SiteEngineerDashboard
               key={org}

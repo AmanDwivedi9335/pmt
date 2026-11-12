@@ -44,8 +44,7 @@ export async function requireOpenVisit(
   const visit = await tx.siteVisit.findFirst({
     where: { ...owner(ctx), id, punchedOutAt: null },
   });
-  if (!visit)
-    throw new ConflictException("Punch in before uploading site media");
+  if (!visit) throw new ConflictException("This site visit is no longer open");
   return visit;
 }
 
@@ -106,6 +105,34 @@ export class SiteVisitsController {
       });
       await audit(tx, ctx, "site-visit.punched-out", visit.id);
       return { visit };
+    });
+  }
+
+  @Post("projects") async recordProject(
+    @Req() req: Request,
+    @Body() body: unknown,
+  ) {
+    const ctx = await this.context(req);
+    const { visitId, projectId } = parse(
+      z.object({ visitId: uuid, projectId: uuid }),
+      body,
+    );
+    return this.db.serial(async (tx) => {
+      const visit = await requireOpenVisit(tx, ctx, visitId);
+      const project = await tx.project.findFirst({
+        where: { ...this.security.projectFilter(ctx), id: projectId },
+        select: { id: true },
+      });
+      if (!project) throw new ForbiddenException("Project access denied");
+      if (visit.projectIds.includes(projectId)) return { visit };
+      const updated = await tx.siteVisit.update({
+        where: { id: visit.id },
+        data: { projectIds: { set: [...visit.projectIds, projectId] } },
+      });
+      await audit(tx, ctx, "site-visit.project-recorded", visit.id, {
+        projectId,
+      });
+      return { visit: updated };
     });
   }
 }
