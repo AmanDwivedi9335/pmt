@@ -4,7 +4,7 @@ RUN corepack enable
 ARG API_INTERNAL_URL=http://api:4000
 ENV API_INTERNAL_URL=$API_INTERNAL_URL
 COPY . .
-RUN pnpm install --frozen-lockfile && pnpm --filter @pmt/shared build && pnpm --filter @pmt/web build
+RUN pnpm install --frozen-lockfile && pnpm --filter @pmt/web build
 RUN chown -R node:node /app/apps/web/.next
 ENV NODE_ENV=production
 USER node

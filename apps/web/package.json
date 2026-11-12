@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "node ../../scripts/run-web.cjs dev",
-    "build": "node ../../scripts/run-web.cjs build",
+    "build": "pnpm --filter @pmt/shared build && node ../../scripts/run-web.cjs build",
     "start": "node ../../scripts/run-web.cjs start",
     "typecheck": "tsc --noEmit"
   },
