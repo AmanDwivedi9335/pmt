@@ -38,6 +38,8 @@ Email delivery is at-least-once; stable Message-ID assists deduplication, but an
 
 Scanner integration: set MALWARE_SCAN_URL to a trusted HTTPS service accepting raw bytes via POST and returning JSON `{ "clean": true }` only after a successful scan. Optional MALWARE_SCAN_TOKEN is sent as a bearer token. Timeout 15 seconds. Missing/unavailable scanner leaves uploads quarantined; rejection blocks downloads. Bytes are size/signature checked, scanned, then copied to a different clean object key to prevent reuse of an upload URL from changing an approved file. Configure orphan quarantine cleanup, bucket versioning and lifecycle rules operationally. S3/SMTP/scanner integration must be exercised in staging.
 
+For site attendance, serve the portal over HTTPS so device location is available. Apply the MongoDB schema with `pnpm db:push` as part of the release and update the worker to scan site media. Allow browser PUT requests from the portal origin on the private object storage bucket, and configure the scanner to accept video bodies up to 50 MiB within its existing timeout.
+
 ## Staging and production release
 
 Build API/web images from repository root with infra Dockerfiles. Supply secrets from the deployment platform; do not bake `.env` into images. The web reverse proxy uses API_INTERNAL_URL; configure it at build and runtime consistently for the target environment. Use TLS at ingress. APP_ORIGIN must exactly match the public origin; production sets NODE_ENV=production, enabling Secure cookies. Services run as a nonroot user.

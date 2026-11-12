@@ -196,6 +196,116 @@ describe("phase 2 project vertical slice", () => {
       ).status,
     ).toBe(403);
   });
+
+  it("records one open site visit and limits project media to its engineer", async () => {
+    const attendance = "workspace/site-attendance",
+      point = { latitude: 30.001, longitude: 77.042, accuracy: 12 },
+      departure = { latitude: 30.002, longitude: 77.044, accuracy: 16 },
+      punch = (path: string, body: unknown) =>
+        engineer
+          .post(`/api/v1/${path}`)
+          .set("Origin", process.env.APP_ORIGIN)
+          .set("x-csrf-token", engineerCsrf)
+          .set("x-organization-id", orgId)
+          .send(body),
+      current = () =>
+        engineer.get(`/api/v1/${attendance}`).set("x-organization-id", orgId);
+
+    expect((await get(attendance)).status).toBe(403);
+    expect((await current()).body).toEqual({ visit: null });
+    expect(
+      (await punch(attendance + "/punch-in", { ...point, latitude: 91 }))
+        .status,
+    ).toBe(400);
+    const punches = await Promise.all([
+      punch(attendance + "/punch-in", point),
+      punch(attendance + "/punch-in", point),
+    ]);
+    expect(punches.map((response) => response.status).sort()).toEqual([
+      201, 409,
+    ]);
+    const visit = punches.find((response) => response.status === 201).body
+      .visit;
+    expect(visit.punchInLocation).toEqual(point);
+    expect(Date.parse(visit.punchedInAt)).toBeGreaterThan(0);
+    expect((await current()).body.visit).toEqual(visit);
+    expect(
+      (
+        await punch(attendance + "/punch-out", {
+          ...departure,
+          visitId: randomUUID(),
+        })
+      ).status,
+    ).toBe(409);
+
+    const previous = { ...process.env };
+    process.env.S3_ACCESS_KEY = "test-key";
+    process.env.S3_SECRET_KEY = "test-secret";
+    process.env.S3_BUCKET = "test-bucket";
+    process.env.S3_PUBLIC_ENDPOINT = "http://127.0.0.1:9000";
+    try {
+      const upload = `projects/${projectId}/documents/upload`;
+      const video = {
+        name: "site.mp4",
+        mimeType: "video/mp4",
+        size: 12 * 1024 * 1024,
+        siteVisitId: visit.id,
+      };
+      expect((await post(upload, video)).status).toBe(403);
+      expect(
+        (await punch(upload, { ...video, siteVisitId: randomUUID() })).status,
+      ).toBe(409);
+      expect(
+        (await punch(`projects/${randomUUID()}/documents/upload`, video))
+          .status,
+      ).toBe(404);
+      expect(
+        (await punch(upload, { ...video, size: 51 * 1024 * 1024 })).status,
+      ).toBe(400);
+      for (const media of [
+        video,
+        { ...video, name: "site.jpg", mimeType: "image/jpeg", size: 1024 },
+      ]) {
+        const result = await punch(upload, media);
+        expect(result.status).toBe(201);
+        expect(
+          await db.document.findUniqueOrThrow({
+            where: { id: result.body.id },
+          }),
+        ).toMatchObject({ ...media, orgId, projectId, status: "QUARANTINED" });
+      }
+
+      const out = await punch(attendance + "/punch-out", {
+        ...departure,
+        visitId: visit.id,
+      });
+      expect(out.status).toBe(201);
+      expect(out.body.visit.punchOutLocation).toEqual(departure);
+      expect(Date.parse(out.body.visit.punchedOutAt)).toBeGreaterThanOrEqual(
+        Date.parse(visit.punchedInAt),
+      );
+      expect((await current()).body.visit).toEqual(out.body.visit);
+      expect((await punch(upload, video)).status).toBe(409);
+      expect(
+        (
+          await punch(attendance + "/punch-out", {
+            ...departure,
+            visitId: visit.id,
+          })
+        ).status,
+      ).toBe(409);
+    } finally {
+      for (const key of [
+        "S3_ACCESS_KEY",
+        "S3_SECRET_KEY",
+        "S3_BUCKET",
+        "S3_PUBLIC_ENDPOINT",
+      ]) {
+        if (previous[key] === undefined) delete process.env[key];
+        else process.env[key] = previous[key];
+      }
+    }
+  });
 });
 const tracker =
   "Project,BAGMANE CAPILTAL TEAH PARK\nLocation,Bangalore\nWork order,4500016760\n\nMaterial,Ordered Qty,Supplied Qty,Pending Supply,Installed at Site,Pending Installation,Supplied Billed Qty,Installation Billed Qty\nBounce Pillar Guard,2600,500,2100,192,2408,0,0";

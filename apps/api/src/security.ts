@@ -35,6 +35,7 @@ export type Context = {
   userId: string;
   orgId: string;
   membershipId: string;
+  roleName: string;
   permissions: string[];
   allProjects: boolean;
 };
@@ -99,6 +100,7 @@ export class Security {
       userId: session.userId,
       orgId,
       membershipId: membership.id,
+      roleName: membership.role.name,
       permissions: membership.role.permissions,
       allProjects: membership.role.permissions.includes("organization.manage"),
     };

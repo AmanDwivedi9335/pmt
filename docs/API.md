@@ -74,7 +74,7 @@ GET/POST `/projects/:id/installations`: boqItemId,quantity,area,reportDate,notes
 
 - GET/POST `/projects/:id/tasks`; PATCH `/tasks/:task` with version and updated fields.
 - GET `/projects/:id/activity`, `/notifications`, `/documents`.
-- POST `/projects/:id/documents/upload`: name,mimeType,size. Returns five-minute private upload URL. Max 10 MB, PDF/JPEG/PNG.
+- POST `/projects/:id/documents/upload`: name, mimeType, size, optional siteVisitId. Returns a five-minute private upload URL. General documents accept PDF, JPEG, and PNG up to 10 MiB. Site media accepts JPEG, PNG, and WebP up to 10 MiB and MP4, MOV, and WebM up to 50 MiB. A site media upload must be authorized and completed by the owner of the open visit on an assigned project.
 - POST `/projects/:id/documents/:doc/complete`: validates stored metadata and queues scan.
 - GET `/projects/:id/documents/:doc/download`: returns a one-minute private signed URL only for CLEAN files. Scanner verifies magic bytes and moves verified bytes to a different immutable object key.
 - GET `/dashboard`: filters projectId,clientId,city,manager,status. Totals and value-weighted progress use authorized records.
@@ -92,6 +92,8 @@ Some list endpoints currently cap at 100 records; full pagination across all mod
 - `GET /api/v1/auth/sessions` lists the caller's active sessions. `DELETE /api/v1/auth/sessions/:id` revokes a session belonging to the caller. `POST /api/v1/auth/change-password` requires the current password and revokes all sessions and outstanding reset links.
 - `GET /api/v1/workspace/my-tasks` returns 25 tasks per page that are assigned to the caller and belong to projects the caller can access. Query parameters are `page` and `state` (`open`, `completed`, `all`).
 - Project task editing remains versioned. Assignment and general edits require both `task.manage` and `project.edit`. A task manager without project editing access can set `TODO`, `IN_PROGRESS`, or `BLOCKED` on their own open tasks. Staff can submit an in-progress task for review by setting `IN_REVIEW`. A manager then sets `DONE` to approve or `CHANGES_REQUESTED` to return it. A manager can pass `null` for `assigneeId` or `dueDate` to clear those fields.
+
+Site engineers use `GET /api/v1/workspace/site-attendance` to retrieve their latest visit in the selected organization. `POST /api/v1/workspace/site-attendance/punch-in` accepts device `latitude`, `longitude`, and `accuracy` in meters. `POST /api/v1/workspace/site-attendance/punch-out` accepts the same fields plus `visitId`. Both punches use server timestamps. Each engineer can have only one open visit per organization. Attendance does not change the user's authentication session.
 
 Set the same independently generated 32-byte hex `IDENTITY_MAIL_KEY` on the API and mail worker before restarting either service. Keep it in the deployment secret store. Keep the key stable until queued identity mail has been delivered. New invitation and password reset outbox entries are encrypted, and successful delivery clears the payload. The worker still reads the previous plaintext email format for existing jobs. `INVITATION_HOURS` defaults to 48 and accepts 1–168. Apply the invitation lifecycle and team group migrations before deploying the API.
 

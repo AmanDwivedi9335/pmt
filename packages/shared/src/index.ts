@@ -26,6 +26,28 @@ export const day = z
   );
 export const email = z.string().trim().toLowerCase().email().max(254);
 export const password = z.string().min(12).max(128);
+export const siteMediaTypes = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "video/mp4",
+  "video/quicktime",
+  "video/webm",
+] as const;
+export const documentTypes = [
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+] as const;
+export const attachmentTypes = [
+  ...documentTypes,
+  "image/webp",
+  "video/mp4",
+  "video/quicktime",
+  "video/webm",
+] as const;
+export const attachmentSizeLimit = (mimeType: string) =>
+  (mimeType.startsWith("video/") ? 50 : 10) * 1024 * 1024;
 export const permissions = [
   "organization.manage",
   "team.manage",

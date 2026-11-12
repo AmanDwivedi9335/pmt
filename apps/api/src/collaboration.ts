@@ -16,7 +16,16 @@ import { ApiTags } from "@nestjs/swagger";
 import { Request } from "express";
 import { Db } from "./db";
 import { Security, audit, parse } from "./security";
-import { z, uuid, day } from "@pmt/shared";
+import {
+  attachmentSizeLimit,
+  attachmentTypes,
+  day,
+  documentTypes,
+  siteMediaTypes,
+  uuid,
+  z,
+} from "@pmt/shared";
+import { requireOpenVisit } from "./site-visits";
 import {
   S3Client,
   PutObjectCommand,
@@ -32,6 +41,8 @@ export function storage(publicEndpoint = false) {
       : process.env.S3_ENDPOINT,
     region: process.env.S3_REGION || "us-east-1",
     forcePathStyle: true,
+    // Browser uploads are signed before their bytes are available.
+    requestChecksumCalculation: "WHEN_REQUIRED",
     credentials: process.env.S3_ACCESS_KEY
       ? {
           accessKeyId: process.env.S3_ACCESS_KEY,
@@ -311,21 +322,28 @@ export class CollaborationController {
   ) {
     const ctx = await this.security.context(req, "document.manage", id),
       input = parse(
-        z.object({
-          name: z
-            .string()
-            .min(1)
-            .max(200)
-            .refine((v) => !/[\\/\x00]/.test(v), "Invalid filename"),
-          mimeType: z.enum(["application/pdf", "image/jpeg", "image/png"]),
-          size: z
-            .number()
-            .int()
-            .min(1)
-            .max(10 * 1024 * 1024),
-        }),
+        z
+          .object({
+            name: z
+              .string()
+              .min(1)
+              .max(200)
+              .refine((v) => !/[\\/\x00]/.test(v), "Invalid filename"),
+            mimeType: z.enum(attachmentTypes),
+            size: z.number().int().min(1),
+            siteVisitId: uuid.optional(),
+          })
+          .refine(
+            ({ mimeType, size, siteVisitId }) =>
+              (siteVisitId ? siteMediaTypes : documentTypes).some(
+                (type) => type === mimeType,
+              ) && size <= attachmentSizeLimit(mimeType),
+            "Unsupported file type or file size exceeds the limit",
+          ),
         body,
       );
+    if (input.siteVisitId)
+      await requireOpenVisit(this.db, ctx, input.siteVisitId);
     const objectKey = `${ctx.orgId}/${id}/${randomUUID()}`;
     const signedUrl = await getSignedUrl(
       storage(true),
@@ -338,6 +356,7 @@ export class CollaborationController {
       { expiresIn: 300 },
     );
     const doc = await this.db.serial(async (tx) => {
+      if (input.siteVisitId) await requireOpenVisit(tx, ctx, input.siteVisitId);
       const d = await tx.document.create({
         data: {
           orgId: ctx.orgId,
@@ -362,6 +381,7 @@ export class CollaborationController {
       where: { id: parse(uuid, doc), orgId: ctx.orgId, projectId: id },
     });
     if (!row) throw new NotFoundException("Document not found");
+    if (row.siteVisitId) await requireOpenVisit(this.db, ctx, row.siteVisitId);
     const head = await storage().send(
       new HeadObjectCommand({
         Bucket: process.env.S3_BUCKET,
@@ -371,6 +391,7 @@ export class CollaborationController {
     if (head.ContentLength !== row.size || head.ContentType !== row.mimeType)
       throw new ConflictException("Uploaded file size or type does not match");
     return this.db.serial(async (tx) => {
+      if (row.siteVisitId) await requireOpenVisit(tx, ctx, row.siteVisitId);
       await tx.outbox.upsert({
         where: { dedupeKey: `scan:${row.id}` },
         create: {

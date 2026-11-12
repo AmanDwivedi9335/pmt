@@ -595,6 +595,78 @@ nav button.active {
   font-size: 14px;
   margin-bottom: 8px;
 }
+.site-day {
+  display: grid;
+  gap: 16px;
+  max-width: 760px;
+}
+.site-day-card {
+  display: grid;
+  gap: 12px;
+}
+.site-day-card p {
+  font-size: 13px;
+}
+.site-day-heading,
+.site-day-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.site-day-heading h2 {
+  font-size: 17px;
+  margin: 0;
+}
+.site-day-actions .button {
+  min-height: 44px;
+}
+.site-punches {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 12px;
+  margin: 0;
+}
+.site-punches > div {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 12px;
+}
+.site-punches dt {
+  font-size: 12px;
+  color: var(--muted);
+}
+.site-punches dd {
+  display: grid;
+  gap: 4px;
+  margin: 4px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.site-punches small {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-weight: 400;
+}
+.site-media-form,
+.site-media-field {
+  display: grid;
+  gap: 8px;
+}
+.site-media-form {
+  gap: 14px;
+}
+.site-day-message {
+  color: inherit;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 10px 12px;
+  font-size: 13px;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
 .tile-icon {
   width: 37px;
   height: 37px;

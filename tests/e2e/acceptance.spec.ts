@@ -52,7 +52,7 @@ test("organization completes setup, import, receipt, independent installation ap
     .getByRole("button", { name: "Sign in", exact: true })
     .click();
   await expect(
-    directStaff.getByRole("heading", { name: "Project dashboard" }),
+    directStaff.getByRole("heading", { name: "Site engineer dashboard" }),
   ).toBeVisible();
   await directStaff.close();
   await page.getByRole("button", { name: "Create team", exact: true }).click();
@@ -219,13 +219,15 @@ test("organization completes setup, import, receipt, independent installation ap
   }
   const engineer = await browser.newPage({
     baseURL: new URL(page.url()).origin,
+    geolocation: { latitude: 12.9716, longitude: 77.5946, accuracy: 20 },
+    permissions: ["geolocation"],
   });
   await engineer.goto(`/#invite=${inviteToken}`);
   await engineer.getByLabel("Your name").fill("Site Engineer");
   await engineer.getByLabel("Password", { exact: false }).fill(password);
   await engineer.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(
-    engineer.getByRole("heading", { name: "Project dashboard" }),
+    engineer.getByRole("heading", { name: "Site engineer dashboard" }),
   ).toBeVisible();
   const team = await (
       await page.request.get("/api/v1/organizations/team", { headers })
@@ -239,6 +241,90 @@ test("organization completes setup, import, receipt, independent installation ap
       })
     ).status(),
   ).toBe(201);
+  await engineer.getByRole("button", { name: "Punch in", exact: true }).click();
+  await expect(engineer.getByText("You’re punched in.")).toBeVisible();
+  await expect(
+    engineer.getByText("12.97160, 77.59460", { exact: false }),
+  ).toBeVisible();
+  await engineer.reload();
+  await expect(engineer.getByText("You’re punched in.")).toBeVisible();
+  await engineer
+    .getByLabel("Project", { exact: true })
+    .selectOption(project.id);
+  await expect(
+    engineer.getByLabel("Site photos and videos", { exact: false }),
+  ).toBeVisible();
+  const authorizedMedia: {
+    name: string;
+    mimeType: string;
+    siteVisitId: string;
+  }[] = [];
+  const uploadedBytes: string[] = [];
+  const completedMedia: string[] = [];
+  const siteDocuments = `/api/v1/projects/${project.id}/documents/`;
+  // Stub only the media transport so browser geolocation and attendance use the real API.
+  await engineer.route(`**${siteDocuments}upload`, async (route) => {
+    const input = route.request().postDataJSON();
+    authorizedMedia.push(input);
+    await route.fulfill({
+      json: { id: input.name, url: `/test-site-storage/${input.name}` },
+    });
+  });
+  await engineer.route("**/test-site-storage/*", async (route) => {
+    expect(route.request().method()).toBe("PUT");
+    uploadedBytes.push(route.request().postData()!);
+    await route.fulfill({ status: 200, body: "" });
+  });
+  await engineer.route(`**${siteDocuments}*/complete`, async (route) => {
+    completedMedia.push(
+      new URL(route.request().url()).pathname.split("/").at(-2)!,
+    );
+    await route.fulfill({ json: { status: "QUARANTINED" } });
+  });
+  await engineer
+    .getByLabel("Site photos and videos", { exact: false })
+    .setInputFiles([
+      {
+        name: "site.jpg",
+        mimeType: "image/jpeg",
+        buffer: Buffer.from("photo"),
+      },
+      { name: "site.mp4", mimeType: "video/mp4", buffer: Buffer.from("video") },
+    ]);
+  await engineer.getByRole("button", { name: "Upload site media" }).click();
+  await expect(
+    engineer.getByText("2 files uploaded and awaiting verification."),
+  ).toBeVisible();
+  expect(authorizedMedia).toMatchObject([
+    {
+      name: "site.jpg",
+      mimeType: "image/jpeg",
+      siteVisitId: expect.any(String),
+    },
+    {
+      name: "site.mp4",
+      mimeType: "video/mp4",
+      siteVisitId: expect.any(String),
+    },
+  ]);
+  expect(authorizedMedia[0].siteVisitId).toBe(authorizedMedia[1].siteVisitId);
+  expect(uploadedBytes).toEqual(["photo", "video"]);
+  expect(completedMedia).toEqual(["site.jpg", "site.mp4"]);
+  await engineer
+    .context()
+    .setGeolocation({ latitude: 12.972, longitude: 77.595, accuracy: 30 });
+  await engineer
+    .getByRole("button", { name: "Punch out", exact: true })
+    .click();
+  await expect(
+    engineer.getByText("Your last visit is complete."),
+  ).toBeVisible();
+  await expect(
+    engineer.getByText("12.97200, 77.59500", { exact: false }),
+  ).toBeVisible();
+  await expect(
+    engineer.getByRole("button", { name: "Upload site media" }),
+  ).toHaveCount(0);
   const assignedTask = await page.request.post(
     `/api/v1/projects/${project.id}/tasks`,
     {

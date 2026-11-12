@@ -52,6 +52,7 @@ import {
   CartesianGrid,
 } from "recharts";
 import { Button, Modal } from "@pmt/ui";
+import SiteEngineerDashboard from "./site-engineer-dashboard";
 type Api = (
   path: string,
   method?: string,
@@ -142,6 +143,7 @@ export default function Workspace({
     [myTaskState, setMyTaskState] = useState("open");
   const membership = me.memberships.find((m: any) => m.orgId === org),
     can = (p: string) => membership?.role.permissions.includes(p);
+  const siteEngineer = membership?.role.name === "SITE_ENGINEER";
   const currency = membership?.organization.currency || "INR";
   const money = (v: any) =>
     new Intl.NumberFormat("en-IN", {
@@ -175,6 +177,7 @@ export default function Workspace({
     setError("");
     setData(null);
     try {
+      if (view === "Dashboard" && siteEngineer) return;
       const list = await api("projects");
       setProjects(list.rows);
       if (view === "Dashboard") setData(await api("dashboard"));
@@ -224,7 +227,7 @@ export default function Workspace({
     } finally {
       setLoading(false);
     }
-  }, [api, view, projectId, activeTab, myTaskPage, myTaskState]);
+  }, [api, view, projectId, activeTab, myTaskPage, myTaskState, siteEngineer]);
   useEffect(() => {
     void reload();
   }, [reload]);
@@ -841,12 +844,16 @@ export default function Workspace({
                 {scoped && detail
                   ? detail.name
                   : view === "Dashboard"
-                    ? "Project dashboard"
+                    ? siteEngineer
+                      ? "Site engineer dashboard"
+                      : "Project dashboard"
                     : view}
               </h1>
               <p className="muted">
                 {view === "Dashboard"
-                  ? "Review project details, resolve outstanding work, and see what’s due next."
+                  ? siteEngineer
+                    ? "Punch in at the site, upload project photos and videos, then punch out when you finish."
+                    : "Review project details, resolve outstanding work, and see what’s due next."
                   : scoped && detail
                     ? `${detail.code} · ${detail.city} · ${detail.client.name}`
                     : (
@@ -1041,6 +1048,13 @@ export default function Workspace({
             <div className="empty">
               Data could not be loaded. Use Retry above.
             </div>
+          ) : view === "Dashboard" && siteEngineer ? (
+            <SiteEngineerDashboard
+              key={org}
+              api={api}
+              canUpload={can("document.manage")}
+              onOpenDocuments={(id) => open({ id }, "Documents")}
+            />
           ) : view === "Dashboard" && data ? (
             <>
               <DashboardProjects

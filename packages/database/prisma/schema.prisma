@@ -568,18 +568,31 @@ model Task {
   @@index([orgId, projectId, status, dueDate])
 }
 
+model SiteVisit {
+  id               String    @id @default(uuid()) @map("_id")
+  orgId            String
+  membershipId     String
+  punchedInAt      DateTime  @default(now())
+  punchInLocation  Json
+  punchedOutAt     DateTime?
+  punchOutLocation Json?
+
+  @@index([orgId, membershipId, punchedInAt])
+}
+
 model Document {
-  id        String   @id @default(uuid()) @map("_id")
-  orgId     String
-  projectId String
-  project   Project  @relation(fields: [projectId], references: [id])
-  name      String
-  objectKey String   @unique
-  mimeType  String
-  size      Int
-  status    String   @default("QUARANTINED")
-  createdBy String
-  createdAt DateTime @default(now())
+  id          String   @id @default(uuid()) @map("_id")
+  orgId       String
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id])
+  name        String
+  objectKey   String   @unique
+  mimeType    String
+  size        Int
+  status      String   @default("QUARANTINED")
+  createdBy   String
+  siteVisitId String?
+  createdAt   DateTime @default(now())
 
   @@index([orgId, projectId])
 }

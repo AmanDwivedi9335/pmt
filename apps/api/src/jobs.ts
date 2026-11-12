@@ -1,6 +1,8 @@
 import { config } from "dotenv";
 import { resolve } from "node:path";
 import { Prisma } from "@prisma/client";
+import { attachmentSizeLimit } from "@pmt/shared";
+import { matchesAttachmentSignature } from "./attachment-signatures";
 import nodemailer from "nodemailer";
 import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { Db } from "./db";
@@ -84,17 +86,11 @@ export async function runJob(
           );
           if (
             object.ContentLength !== document.size ||
-            document.size > 10485760
+            document.size > attachmentSizeLimit(document.mimeType)
           )
             throw new Error("File size mismatch");
           const bytes = Buffer.from(await object.Body!.transformToByteArray());
-          const signature =
-            document.mimeType === "application/pdf"
-              ? bytes.subarray(0, 5).toString() === "%PDF-"
-              : document.mimeType === "image/png"
-                ? bytes.subarray(0, 8).toString("hex") === "89504e470d0a1a0a"
-                : bytes.subarray(0, 3).toString("hex") === "ffd8ff";
-          if (!signature) {
+          if (!matchesAttachmentSignature(document.mimeType, bytes)) {
             await tx.document.update({
               where: { id: document.id },
               data: { status: "REJECTED" },
