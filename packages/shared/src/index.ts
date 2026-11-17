@@ -27,10 +27,13 @@ export const day = z
 export const email = z.string().trim().toLowerCase().email().max(254);
 export const password = z.string().min(12).max(128);
 export const attendanceTimeZone = "Asia/Kolkata";
-export const siteMediaTypes = [
+export const sitePhotoTypes = [
   "image/jpeg",
   "image/png",
   "image/webp",
+] as const;
+export const siteMediaTypes = [
+  ...sitePhotoTypes,
   "video/mp4",
   "video/quicktime",
   "video/webm",

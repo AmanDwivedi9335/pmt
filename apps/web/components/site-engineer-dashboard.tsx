@@ -1,7 +1,17 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import { Camera, Clock, MapPin, Upload } from "lucide-react";
 import { Button } from "@pmt/ui";
-import { attachmentSizeLimit, siteMediaTypes } from "@pmt/shared";
+import {
+  attachmentSizeLimit,
+  siteMediaTypes,
+  sitePhotoTypes,
+} from "@pmt/shared";
 
 type Api = (path: string, method?: string, body?: unknown) => Promise<any>;
 type Point = { latitude: number; longitude: number; accuracy: number };
@@ -11,6 +21,7 @@ type Visit = {
   punchInLocation: Point;
   punchedOutAt: string | null;
   punchOutLocation: Point | null;
+  punchProjectId: string | null;
   projectIds: string[];
 };
 type Project = { id: string; code: string; name: string };
@@ -99,9 +110,18 @@ export default function SiteEngineerDashboard({
   const [projects, setProjects] = useState<ProjectPage | null>(null);
   const [projectsLoading, setProjectsLoading] = useState(false);
   const [projectsError, setProjectsError] = useState("");
+  const [punchProjectId, setPunchProjectId] = useState("");
+  const [attendanceProject, setAttendanceProject] = useState<Project | null>(
+    null,
+  );
+  const [photo, setPhoto] = useState<File | null>(null);
+  const photoInput = useRef<HTMLInputElement>(null);
+  const preparedPhoto = useRef<string | null>(null);
   const [projectId, setProjectId] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const active = !!visit && !visit.punchedOutAt;
+  const needsPhoto = !active || !!visit.punchProjectId;
+  const busy = punching || uploading || recording;
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -109,6 +129,15 @@ export default function SiteEngineerDashboard({
     try {
       const data = await api(attendance);
       setVisit(data.visit);
+      setAttendanceProject(data.project ?? null);
+      setProjectId(
+        (previous) =>
+          previous ||
+          (data.visit?.punchedOutAt ? "" : data.visit?.punchProjectId || ""),
+      );
+      setPhoto(null);
+      if (photoInput.current) photoInput.current.value = "";
+      preparedPhoto.current = null;
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -152,8 +181,8 @@ export default function SiteEngineerDashboard({
     void refresh();
   }, [refresh]);
   useEffect(() => {
-    if (active) void loadProjects(1);
-  }, [active, loadProjects]);
+    void loadProjects(1);
+  }, [loadProjects]);
 
   async function recordProject() {
     if (!active || !projectId || recording || punching || uploading) return;
@@ -173,20 +202,48 @@ export default function SiteEngineerDashboard({
   }
 
   async function punch() {
+    if (
+      busy ||
+      loading ||
+      (!active && !punchProjectId) ||
+      (needsPhoto && !photo)
+    )
+      return;
     setPunching(true);
     setError("");
     try {
       const point = await locate();
+      let photoId = preparedPhoto.current;
+      if (needsPhoto && photo && !photoId) {
+        if (!sitePhotoTypes.some((type) => type === photo.type))
+          throw new Error("Select a JPEG, PNG or WebP photo.");
+        if (!photo.size || photo.size > attachmentSizeLimit(photo.type))
+          throw new Error("Select a photo between 1 byte and 10 MB.");
+        photoId = await uploadDocument(
+          active ? visit.punchProjectId! : punchProjectId,
+          photo,
+          { punchPhoto: active ? "OUT" : "IN" },
+        );
+        preparedPhoto.current = photoId;
+      }
       const data = active
         ? await api(attendance + "/punch-out", "POST", {
             ...point,
             visitId: visit.id,
+            ...(needsPhoto && { photoId }),
           })
-        : await api(attendance + "/punch-in", "POST", point);
+        : await api(attendance + "/punch-in", "POST", {
+            ...point,
+            projectId: punchProjectId,
+            photoId,
+          });
       setVisit(data.visit);
-      setProjectId("");
+      if (!active) setAttendanceProject(data.project);
+      setProjectId(active ? "" : punchProjectId);
+      setPunchProjectId("");
+      setPhoto(null);
+      preparedPhoto.current = null;
       setRecordError("");
-      setProjects(null);
       setFiles([]);
       setUploadResult("");
       setUploadError("");
@@ -195,6 +252,28 @@ export default function SiteEngineerDashboard({
     } finally {
       setPunching(false);
     }
+  }
+
+  async function uploadDocument(
+    projectId: string,
+    file: File,
+    purpose: { siteVisitId: string } | { punchPhoto: "IN" | "OUT" },
+  ): Promise<string> {
+    const base = `projects/${projectId}/documents/`;
+    const authorization = await api(base + "upload", "POST", {
+      name: file.name,
+      size: file.size,
+      mimeType: file.type,
+      ...purpose,
+    });
+    const response = await fetch(authorization.url, {
+      method: "PUT",
+      headers: { "Content-Type": file.type },
+      body: file,
+    });
+    if (!response.ok) throw new Error("Upload to project storage failed");
+    await api(base + `${authorization.id}/complete`, "POST");
+    return authorization.id;
   }
 
   async function upload(e: FormEvent<HTMLFormElement>) {
@@ -209,7 +288,6 @@ export default function SiteEngineerDashboard({
     )
       return;
     const picker = e.currentTarget.querySelector("input[type=file]");
-    const base = `projects/${projectId}/documents/`;
     setUploading(true);
     setUploadError("");
     setUploadResult("");
@@ -222,19 +300,7 @@ export default function SiteEngineerDashboard({
             throw new Error("Unsupported photo or video format");
           if (!file.size || file.size > attachmentSizeLimit(file.type))
             throw new Error("File is empty or exceeds the size limit");
-          const authorization = await api(base + "upload", "POST", {
-            name: file.name,
-            size: file.size,
-            mimeType: file.type,
-            siteVisitId: visit.id,
-          });
-          const response = await fetch(authorization.url, {
-            method: "PUT",
-            headers: { "Content-Type": file.type },
-            body: file,
-          });
-          if (!response.ok) throw new Error("Upload to project storage failed");
-          await api(base + `${authorization.id}/complete`, "POST");
+          await uploadDocument(projectId, file, { siteVisitId: visit.id });
           uploaded++;
         } catch (err) {
           failures.push(`${file.name}: ${(err as Error).message}`);
@@ -251,6 +317,43 @@ export default function SiteEngineerDashboard({
       setUploading(false);
     }
   }
+
+  const projectOptions = projects?.rows ?? [];
+  const projectFeedback = (
+    <>
+      {projectsError && (
+        <div className="site-day-message" role="alert">
+          {projectsError}
+        </div>
+      )}
+      {projectsLoading && <p role="status">Loading projects…</p>}
+      {projects && !projectOptions.length && (
+        <p>No projects are assigned to you yet.</p>
+      )}
+      {(projectsError ||
+        (projects &&
+          (!projectOptions.length ||
+            projects.page * projects.pageSize < projects.total))) && (
+        <div className="site-day-actions">
+          <Button
+            variant="outline"
+            disabled={projectsLoading || busy}
+            onClick={() =>
+              void loadProjects(
+                projectOptions.length ? (projects?.page ?? 0) + 1 : 1,
+              )
+            }
+          >
+            {projectsError
+              ? "Retry loading projects"
+              : projectOptions.length
+                ? "Load more projects"
+                : "Reload projects"}
+          </Button>
+        </div>
+      )}
+    </>
+  );
 
   return (
     <div className="site-day">
@@ -273,6 +376,15 @@ export default function SiteEngineerDashboard({
                   ? "Your last visit is complete."
                   : "Punch in when you arrive at the site."}
         </p>
+        {attendanceProject && (
+          <p>
+            <strong>
+              {active ? "Attendance project" : "Last visit project"}
+            </strong>
+            {" · "}
+            {attendanceProject.code} · {attendanceProject.name}
+          </p>
+        )}
         {visit && (
           <dl className="site-punches">
             <PunchDetails
@@ -294,10 +406,62 @@ export default function SiteEngineerDashboard({
             {error}
           </div>
         )}
+        {!active && (
+          <>
+            <div className="site-media-field">
+              <label htmlFor="attendance-punch-project">Project</label>
+              <select
+                id="attendance-punch-project"
+                value={punchProjectId}
+                disabled={busy || loading || !projectOptions.length}
+                onChange={(e) => {
+                  setPunchProjectId(e.target.value);
+                  preparedPhoto.current = null;
+                  setPhoto(null);
+                  if (photoInput.current) photoInput.current.value = "";
+                }}
+              >
+                <option value="">Select an assigned project</option>
+                {projectOptions.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.code} · {project.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {projectFeedback}
+          </>
+        )}
+        {visit !== undefined && needsPhoto && (
+          <div className="site-media-field">
+            <label htmlFor="attendance-punch-photo">
+              {active ? "Punch-out photo" : "Punch-in photo"}
+            </label>
+            <input
+              ref={photoInput}
+              key={active ? visit.id : "punch-in"}
+              id="attendance-punch-photo"
+              type="file"
+              accept={sitePhotoTypes.join(",")}
+              capture="environment"
+              disabled={busy || loading || (!active && !punchProjectId)}
+              onChange={(e) => {
+                setPhoto(e.currentTarget.files?.[0] ?? null);
+                preparedPhoto.current = null;
+              }}
+            />
+            <small>JPEG, PNG or WebP up to 10 MB.</small>
+          </div>
+        )}
         <div className="site-day-actions">
           {visit !== undefined && (
             <Button
-              disabled={loading || punching || uploading || recording}
+              disabled={
+                loading ||
+                busy ||
+                (!active && !punchProjectId) ||
+                (needsPhoto && !photo)
+              }
               onClick={() => void punch()}
             >
               <MapPin size={16} aria-hidden="true" />
@@ -318,7 +482,9 @@ export default function SiteEngineerDashboard({
             </Button>
           )}
         </div>
-        <p>Each punch records the date, time and your device location.</p>
+        <p>
+          Attendance records your project, photos, times and device location.
+        </p>
       </section>
       <section className="card site-day-card" aria-labelledby="media-heading">
         <div className="site-day-heading">
@@ -333,19 +499,10 @@ export default function SiteEngineerDashboard({
               Choose an assigned project to record your visit or upload photos
               and videos.
             </p>
-            {projectsError && (
-              <div className="site-day-message" role="alert">
-                {projectsError}
-              </div>
-            )}
-            {projectsLoading && <p role="status">Loading projects…</p>}
-            {projects && !projects.rows.length && (
-              <p>No projects are assigned to you yet.</p>
-            )}
-            {projects?.rows.length ? (
+            {projectOptions.length || attendanceProject ? (
               <form className="site-media-form" onSubmit={upload}>
                 <div className="site-media-field">
-                  <label htmlFor="site-media-project">Project</label>
+                  <label htmlFor="site-media-project">Media project</label>
                   <select
                     id="site-media-project"
                     value={projectId}
@@ -359,7 +516,15 @@ export default function SiteEngineerDashboard({
                     }}
                   >
                     <option value="">Select a project</option>
-                    {projects.rows.map((project) => (
+                    {attendanceProject &&
+                      !projectOptions.some(
+                        ({ id }) => id === attendanceProject.id,
+                      ) && (
+                        <option value={attendanceProject.id}>
+                          {attendanceProject.code} · {attendanceProject.name}
+                        </option>
+                      )}
+                    {projectOptions.map((project) => (
                       <option key={project.id} value={project.id}>
                         {project.code} · {project.name}
                       </option>
@@ -443,19 +608,7 @@ export default function SiteEngineerDashboard({
                 </div>
               </form>
             ) : null}
-            {(projectsError ||
-              (projects &&
-                projects.page * projects.pageSize < projects.total)) && (
-              <Button
-                variant="outline"
-                disabled={projectsLoading || uploading || punching}
-                onClick={() => void loadProjects((projects?.page ?? 0) + 1)}
-              >
-                {projectsError
-                  ? "Retry loading projects"
-                  : "Load more projects"}
-              </Button>
-            )}
+            {projectFeedback}
             {uploadResult && <p role="status">{uploadResult}</p>}
             {uploadError && (
               <div className="site-day-message" role="alert">

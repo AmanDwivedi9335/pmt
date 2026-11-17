@@ -25,7 +25,13 @@ type Visit = {
   punchedOutAt: string | null;
   punchInLocation: Point;
   punchOutLocation: Point | null;
-  files: { id: string; name: string; status: string }[];
+  punchProject: Project | null;
+  files: {
+    id: string;
+    name: string;
+    status: string;
+    punchPhoto: string | null;
+  }[];
 };
 type Report = {
   projects: Project[];
@@ -85,33 +91,84 @@ function Punch({ value, point }: { value: string; point?: Point | null }) {
   );
 }
 
-function VisitDetails({ visit }: { visit: Visit }) {
+function VisitDetails({
+  visit,
+  project,
+  api,
+}: {
+  visit: Visit;
+  project: Project | null;
+  api: Api;
+}) {
+  const [photoError, setPhotoError] = useState("");
+  const files = visit.files.filter((file) => !file.punchPhoto);
+  const otherProject =
+    visit.punchProject?.id === project?.id ? null : visit.punchProject;
+
+  function punchPhoto(stage: "IN" | "OUT", label: string) {
+    const file = visit.files.find((file) => file.punchPhoto === stage);
+    if (!file || !project) return null;
+    if (file.status !== "CLEAN")
+      return (
+        <small>
+          {label} · {mediaStatus[file.status] ?? file.status}
+        </small>
+      );
+    return (
+      <Button
+        variant="outline"
+        onClick={async () => {
+          setPhotoError("");
+          try {
+            const { url } = await api(
+              `projects/${project.id}/documents/${file.id}/download`,
+            );
+            window.location.assign(url);
+          } catch (err) {
+            setPhotoError((err as Error).message);
+          }
+        }}
+      >
+        Download {label.toLowerCase()}
+      </Button>
+    );
+  }
+
   return (
     <li className="attendance-visit">
-      <dl>
-        <div>
-          <dt>Punch in</dt>
-          <dd>
-            <Punch value={visit.punchedInAt} point={visit.punchInLocation} />
-          </dd>
-        </div>
-        <div>
-          <dt>Punch out</dt>
-          <dd>
-            {visit.punchedOutAt ? (
-              <Punch
-                value={visit.punchedOutAt}
-                point={visit.punchOutLocation}
-              />
-            ) : (
-              "Open visit"
-            )}
-          </dd>
-        </div>
-      </dl>
-      {visit.files.length ? (
+      {otherProject ? (
+        <small>
+          Attendance project · {otherProject.code} · {otherProject.name}
+        </small>
+      ) : (
+        <dl>
+          <div>
+            <dt>Punch in</dt>
+            <dd>
+              <Punch value={visit.punchedInAt} point={visit.punchInLocation} />
+              {punchPhoto("IN", "Punch-in photo")}
+            </dd>
+          </div>
+          <div>
+            <dt>Punch out</dt>
+            <dd>
+              {visit.punchedOutAt ? (
+                <Punch
+                  value={visit.punchedOutAt}
+                  point={visit.punchOutLocation}
+                />
+              ) : (
+                "Open visit"
+              )}
+              {punchPhoto("OUT", "Punch-out photo")}
+            </dd>
+          </div>
+        </dl>
+      )}
+      {photoError && <small role="alert">{photoError}</small>}
+      {files.length ? (
         <ul className="attendance-files">
-          {visit.files.map((file) => (
+          {files.map((file) => (
             <li key={file.id}>
               <span>{file.name}</span>
               <small>{mediaStatus[file.status] ?? file.status}</small>
@@ -119,17 +176,26 @@ function VisitDetails({ visit }: { visit: Visit }) {
           ))}
         </ul>
       ) : (
-        <small>No uploads for this project on this visit.</small>
+        !visit.files.length && (
+          <small>No uploads for this project on this visit.</small>
+        )
       )}
     </li>
   );
 }
 
+type Api = {
+  (path: `organizations/attendance-report?${string}`): Promise<Report>;
+  (
+    path: `projects/${string}/documents/${string}/download`,
+  ): Promise<{ url: string }>;
+};
+
 export default function AttendanceReport({
   api,
   onOpenDocuments,
 }: {
-  api: (path: string) => Promise<Report>;
+  api: Api;
   onOpenDocuments: (id: string) => void;
 }) {
   const [filters, setFilters] = useState<Filters>(() => ({
@@ -296,8 +362,13 @@ export default function AttendanceReport({
                   <tbody>
                     {result.rows.map(
                       ({ employee, project, totals, visits }) => {
-                        const first = visits[0];
-                        const last = visits.at(-1);
+                        const punches = visits.filter(
+                          (visit) =>
+                            !visit.punchProject ||
+                            visit.punchProject.id === project?.id,
+                        );
+                        const first = punches[0];
+                        const last = punches.at(-1);
                         return (
                           <tr
                             key={`${employee.id}:${project?.id ?? "unlinked"}`}
@@ -358,6 +429,8 @@ export default function AttendanceReport({
                                       <VisitDetails
                                         key={visit.id}
                                         visit={visit}
+                                        project={project}
+                                        api={api}
                                       />
                                     ))}
                                   </ul>

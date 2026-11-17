@@ -241,37 +241,36 @@ test("organization completes setup, import, receipt, independent installation ap
       })
     ).status(),
   ).toBe(201);
-  await engineer.getByRole("button", { name: "Punch in", exact: true }).click();
-  await expect(engineer.getByText("You’re punched in.")).toBeVisible();
-  await expect(
-    engineer.getByText("12.97160, 77.59460", { exact: false }),
-  ).toBeVisible();
-  await engineer.reload();
-  await expect(engineer.getByText("You’re punched in.")).toBeVisible();
-  await engineer
-    .getByLabel("Project", { exact: true })
-    .selectOption(project.id);
-  await engineer.getByRole("button", { name: "Record project visit" }).click();
-  await expect(
-    engineer.getByRole("button", { name: "Project recorded" }),
-  ).toBeDisabled();
-  await expect(
-    engineer.getByLabel("Site photos and videos", { exact: false }),
-  ).toBeVisible();
   const authorizedMedia: {
     name: string;
     mimeType: string;
     siteVisitId: string;
   }[] = [];
+  const punchPhotos = new Set<string>();
   const uploadedBytes: string[] = [];
   const completedMedia: string[] = [];
   const siteDocuments = `/api/v1/projects/${project.id}/documents/`;
-  // Stub only the media transport so browser geolocation and attendance use the real API.
+  // Stub storage and verification while attendance uses the real API.
   await engineer.route(`**${siteDocuments}upload`, async (route) => {
     const input = route.request().postDataJSON();
-    authorizedMedia.push(input);
+    let uploadId = input.name;
+    if (input.punchPhoto) {
+      const photo = await db.document.create({
+        data: {
+          ...input,
+          orgId: member.orgId,
+          projectId: project.id,
+          createdBy: member.user.id,
+          objectKey: randomUUID(),
+        },
+      });
+      uploadId = photo.id;
+      punchPhotos.add(uploadId);
+    } else {
+      authorizedMedia.push(input);
+    }
     await route.fulfill({
-      json: { id: input.name, url: `/test-site-storage/${input.name}` },
+      json: { id: uploadId, url: `/test-site-storage/${uploadId}` },
     });
   });
   await engineer.route("**/test-site-storage/*", async (route) => {
@@ -280,11 +279,58 @@ test("organization completes setup, import, receipt, independent installation ap
     await route.fulfill({ status: 200, body: "" });
   });
   await engineer.route(`**${siteDocuments}*/complete`, async (route) => {
-    completedMedia.push(
-      new URL(route.request().url()).pathname.split("/").at(-2)!,
-    );
+    const documentId = new URL(route.request().url()).pathname
+      .split("/")
+      .at(-2)!;
+    if (punchPhotos.has(documentId)) {
+      await db.$transaction([
+        db.document.update({
+          where: { id: documentId },
+          data: { status: "CLEAN" },
+        }),
+        db.outbox.create({
+          data: {
+            orgId: member.orgId,
+            kind: "SCAN",
+            dedupeKey: `scan:${documentId}`,
+            payload: { documentId },
+            processedAt: new Date(),
+          },
+        }),
+      ]);
+    } else {
+      completedMedia.push(documentId);
+    }
     await route.fulfill({ json: { status: "QUARANTINED" } });
   });
+  await engineer.reload();
+  const punchIn = engineer.getByRole("button", {
+    name: "Punch in",
+    exact: true,
+  });
+  await expect(punchIn).toBeDisabled();
+  await engineer
+    .getByLabel("Project", { exact: true })
+    .selectOption(project.id);
+  await expect(punchIn).toBeDisabled();
+  await engineer.getByLabel("Punch-in photo").setInputFiles({
+    name: "arrival.jpg",
+    mimeType: "image/jpeg",
+    buffer: Buffer.from("arrival photo"),
+  });
+  await punchIn.click();
+  await expect(engineer.getByText("You’re punched in.")).toBeVisible();
+  await expect(
+    engineer.getByText("12.97160, 77.59460", { exact: false }),
+  ).toBeVisible();
+  await engineer.reload();
+  await expect(engineer.getByText("You’re punched in.")).toBeVisible();
+  await expect(
+    engineer.getByLabel("Media project", { exact: true }),
+  ).toHaveValue(project.id);
+  await expect(
+    engineer.getByRole("button", { name: "Project recorded" }),
+  ).toBeDisabled();
   await engineer
     .getByLabel("Site photos and videos", { exact: false })
     .setInputFiles([
@@ -312,14 +358,22 @@ test("organization completes setup, import, receipt, independent installation ap
     },
   ]);
   expect(authorizedMedia[0].siteVisitId).toBe(authorizedMedia[1].siteVisitId);
-  expect(uploadedBytes).toEqual(["photo", "video"]);
+  expect(uploadedBytes).toEqual(["arrival photo", "photo", "video"]);
   expect(completedMedia).toEqual(["site.jpg", "site.mp4"]);
   await engineer
     .context()
     .setGeolocation({ latitude: 12.972, longitude: 77.595, accuracy: 30 });
-  await engineer
-    .getByRole("button", { name: "Punch out", exact: true })
-    .click();
+  const punchOut = engineer.getByRole("button", {
+    name: "Punch out",
+    exact: true,
+  });
+  await expect(punchOut).toBeDisabled();
+  await engineer.getByLabel("Punch-out photo").setInputFiles({
+    name: "departure.jpg",
+    mimeType: "image/jpeg",
+    buffer: Buffer.from("departure photo"),
+  });
+  await punchOut.click();
   await expect(
     engineer.getByText("Your last visit is complete."),
   ).toBeVisible();
@@ -329,6 +383,8 @@ test("organization completes setup, import, receipt, independent installation ap
   await expect(
     engineer.getByRole("button", { name: "Upload site media" }),
   ).toHaveCount(0);
+  expect(uploadedBytes.at(-1)).toBe("departure photo");
+  await db.$disconnect();
   const assignedTask = await page.request.post(
     `/api/v1/projects/${project.id}/tasks`,
     {
@@ -475,6 +531,12 @@ test("organization completes setup, import, receipt, independent installation ap
   ).toBeVisible();
   await expect(
     engineerRow.getByText("12.97200, 77.59500", { exact: false }),
+  ).toBeVisible();
+  await expect(
+    engineerRow.getByRole("button", { name: "Download punch-in photo" }),
+  ).toBeVisible();
+  await expect(
+    engineerRow.getByRole("button", { name: "Download punch-out photo" }),
   ).toBeVisible();
   await page.getByLabel("Period", { exact: false }).selectOption("monthly");
   await page.getByLabel("Employee", { exact: true }).fill(siteEmail);

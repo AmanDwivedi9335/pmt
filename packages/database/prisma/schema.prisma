@@ -576,6 +576,7 @@ model SiteVisit {
   punchInLocation  Json
   punchedOutAt     DateTime?
   punchOutLocation Json?
+  punchProjectId   String?
   projectIds       String[]  @default([])
 
   @@index([orgId, membershipId, punchedInAt])
@@ -594,6 +595,7 @@ model Document {
   status      String   @default("QUARANTINED")
   createdBy   String
   siteVisitId String?
+  punchPhoto  String?
   createdAt   DateTime @default(now())
 
   @@index([orgId, projectId])

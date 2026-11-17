@@ -40,7 +40,14 @@ async function inBatches<T>(
   return results;
 }
 
-type Media = { id: string; name: string; mimeType: string; status: string };
+type Project = { id: string; code: string; name: string };
+type Media = {
+  id: string;
+  name: string;
+  mimeType: string;
+  status: string;
+  punchPhoto: string | null;
+};
 type Totals = {
   visits: number;
   open: number;
@@ -55,6 +62,7 @@ type Visit = {
   punchedOutAt: Date | null;
   punchInLocation: unknown;
   punchOutLocation: unknown;
+  punchProject: Project | null;
   files: Media[];
 };
 type Row = {
@@ -65,7 +73,7 @@ type Row = {
     role: string;
     active: boolean;
   };
-  project: { id: string; code: string; name: string } | null;
+  project: Project | null;
   totals: Totals;
   visits: Visit[];
 };
@@ -150,6 +158,7 @@ export class AttendanceReportsController {
             status: true,
             projectId: true,
             siteVisitId: true,
+            punchPhoto: true,
           },
           orderBy: [{ createdAt: "asc" }, { id: "asc" }],
         }),
@@ -236,13 +245,18 @@ export class AttendanceReportsController {
         membershipId: _member,
         orgId: _org,
         projectIds,
+        punchProjectId,
         ...visit
       } of visitsByMember.get(member.id) ?? []) {
         const media = mediaByVisit.get(visit.id);
+        const punchProject = punchProjectId
+          ? (projectById.get(punchProjectId) ?? null)
+          : null;
         const linked = new Set([
           ...(projectIds ?? []).filter((id) => projectById.has(id)),
           ...(media?.keys() ?? []),
         ]);
+        if (punchProject) linked.add(punchProject.id);
         if (!linked.size) linked.add("unlinked");
         let included = false;
         for (const key of linked) {
@@ -250,7 +264,7 @@ export class AttendanceReportsController {
           if (!row) continue;
           included = true;
           const files = media?.get(key) ?? [];
-          row.visits.push({ ...visit, files });
+          row.visits.push({ ...visit, punchProject, files });
           row.totals.visits++;
           if (!visit.punchedOutAt) row.totals.open++;
           countMedia(row.totals, files);

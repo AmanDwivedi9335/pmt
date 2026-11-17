@@ -213,13 +213,55 @@ describe("phase 2 project vertical slice", () => {
 
     expect((await get(attendance)).status).toBe(403);
     expect((await current()).body).toEqual({ visit: null });
+    expect((await punch(attendance + "/punch-in", point)).status).toBe(400);
+    const member = await db.membership.findFirstOrThrow({
+      where: { orgId, user: { name: "Engineer" } },
+    });
+    async function stageArrivalPhoto() {
+      const photo = await db.document.create({
+        data: {
+          orgId,
+          projectId,
+          createdBy: member.userId,
+          punchPhoto: "IN",
+          name: "arrival.jpg",
+          mimeType: "image/jpeg",
+          size: 1024,
+          objectKey: randomUUID(),
+        },
+      });
+      return photo.id;
+    }
+    async function queueScan(photoId: string) {
+      await db.outbox.create({
+        data: {
+          orgId,
+          kind: "SCAN",
+          dedupeKey: `scan:${photoId}`,
+          payload: { documentId: photoId },
+        },
+      });
+    }
+    const inPhotoId = await stageArrivalPhoto();
+    const arrival = { ...point, projectId, photoId: inPhotoId };
+    expect((await punch(attendance + "/punch-in", arrival)).status).toBe(409);
+    expect((await current()).body).toEqual({ visit: null });
     expect(
-      (await punch(attendance + "/punch-in", { ...point, latitude: 91 }))
+      (await punch(attendance + "/punch-in", { ...arrival, latitude: 91 }))
         .status,
     ).toBe(400);
+    expect(
+      (
+        await punch(attendance + "/punch-in", {
+          ...arrival,
+          projectId: randomUUID(),
+        })
+      ).status,
+    ).toBe(403);
+    await queueScan(inPhotoId);
     const punches = await Promise.all([
-      punch(attendance + "/punch-in", point),
-      punch(attendance + "/punch-in", point),
+      punch(attendance + "/punch-in", arrival),
+      punch(attendance + "/punch-in", arrival),
     ]);
     expect(punches.map((response) => response.status).sort()).toEqual([
       201, 409,
@@ -227,6 +269,9 @@ describe("phase 2 project vertical slice", () => {
     const visit = punches.find((response) => response.status === 201).body
       .visit;
     expect(visit.punchInLocation).toEqual(point);
+    expect(visit.punchProjectId).toBe(projectId);
+    expect(visit.projectIds).toEqual([projectId]);
+    expect((await current()).body.project.id).toBe(projectId);
     expect(Date.parse(visit.punchedInAt)).toBeGreaterThan(0);
     expect((await current()).body.visit).toEqual(visit);
     const projectLog = { visitId: visit.id, projectId };
@@ -289,16 +334,74 @@ describe("phase 2 project vertical slice", () => {
         ).toMatchObject({ ...media, orgId, projectId, status: "QUARANTINED" });
       }
 
+      const exit = { ...departure, visitId: visit.id };
+      expect((await punch(attendance + "/punch-out", exit)).status).toBe(409);
+      expect(
+        (
+          await punch(attendance + "/punch-out", {
+            ...exit,
+            photoId: inPhotoId,
+          })
+        ).status,
+      ).toBe(409);
+      const departurePhoto = {
+        name: "departure.jpg",
+        mimeType: "image/jpeg",
+        size: 1024,
+        punchPhoto: "OUT",
+      };
+      expect(
+        (await punch(upload, { ...departurePhoto, mimeType: "video/mp4" }))
+          .status,
+      ).toBe(400);
+      expect(
+        (
+          await punch(
+            `projects/${randomUUID()}/documents/upload`,
+            departurePhoto,
+          )
+        ).status,
+      ).toBe(409);
+      const staged = await punch(upload, departurePhoto);
+      expect(staged.status).toBe(201);
+      const outPhotoId = staged.body.id;
+      const documents = `projects/${projectId}/documents`;
+      expect((await get(documents)).body).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: outPhotoId })]),
+      );
+      await queueScan(outPhotoId);
       const out = await punch(attendance + "/punch-out", {
-        ...departure,
-        visitId: visit.id,
+        ...exit,
+        photoId: outPhotoId,
       });
       expect(out.status).toBe(201);
+      expect(out.body.visit.punchProjectId).toBe(projectId);
       expect(out.body.visit.punchOutLocation).toEqual(departure);
       expect(Date.parse(out.body.visit.punchedOutAt)).toBeGreaterThanOrEqual(
         Date.parse(visit.punchedInAt),
       );
       expect((await current()).body.visit).toEqual(out.body.visit);
+      expect((await get(documents)).body).toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: outPhotoId })]),
+      );
+      const attendanceDate = new Intl.DateTimeFormat("sv-SE", {
+        timeZone: "Asia/Kolkata",
+        dateStyle: "short",
+      }).format(new Date(visit.punchedInAt));
+      const report = await get(
+        `organizations/attendance-report?period=daily&date=${attendanceDate}&projectId=${projectId}`,
+      );
+      expect(report.status).toBe(200);
+      const reportVisit = report.body.rows
+        .flatMap((row: { visits: { id: string }[] }) => row.visits)
+        .find((row: { id: string }) => row.id === visit.id);
+      expect(reportVisit).toMatchObject({
+        punchProject: { id: projectId },
+        files: expect.arrayContaining([
+          expect.objectContaining({ id: inPhotoId, punchPhoto: "IN" }),
+          expect.objectContaining({ id: outPhotoId, punchPhoto: "OUT" }),
+        ]),
+      });
       expect((await punch(upload, video)).status).toBe(409);
       expect(
         (
@@ -308,6 +411,21 @@ describe("phase 2 project vertical slice", () => {
           })
         ).status,
       ).toBe(409);
+      const legacy = await db.siteVisit.create({
+        data: {
+          orgId,
+          membershipId: member.id,
+          punchInLocation: point,
+        },
+      });
+      expect(
+        (
+          await punch(attendance + "/punch-out", {
+            ...departure,
+            visitId: legacy.id,
+          })
+        ).status,
+      ).toBe(201);
     } finally {
       for (const key of [
         "S3_ACCESS_KEY",

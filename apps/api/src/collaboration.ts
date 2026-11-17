@@ -22,10 +22,16 @@ import {
   day,
   documentTypes,
   siteMediaTypes,
+  sitePhotoTypes,
   uuid,
   z,
 } from "@pmt/shared";
-import { requireOpenVisit } from "./site-visits";
+import {
+  requireOpenVisit,
+  requirePunchOutProject,
+  requireSiteEngineer,
+} from "./site-visits";
+import type { Prisma } from "@prisma/client";
 import {
   S3Client,
   PutObjectCommand,
@@ -34,6 +40,15 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { randomUUID } from "node:crypto";
+
+const visibleDocument = {
+  OR: [
+    { punchPhoto: null },
+    { punchPhoto: { isSet: false } },
+    { siteVisitId: { isSet: true, not: null } },
+  ],
+} satisfies Prisma.DocumentWhereInput;
+
 export function storage(publicEndpoint = false) {
   return new S3Client({
     endpoint: publicEndpoint
@@ -302,7 +317,7 @@ export class CollaborationController {
   ) {
     const ctx = await this.security.context(req, "project.view", id);
     return this.db.document.findMany({
-      where: { orgId: ctx.orgId, projectId: id },
+      where: { orgId: ctx.orgId, projectId: id, ...visibleDocument },
       select: {
         id: true,
         name: true,
@@ -320,7 +335,7 @@ export class CollaborationController {
     @Param("id") id: string,
     @Body() body: unknown,
   ) {
-    const ctx = await this.security.context(req, "document.manage", id),
+    const ctx = await this.security.context(req, "document.manage"),
       input = parse(
         z
           .object({
@@ -332,16 +347,30 @@ export class CollaborationController {
             mimeType: z.enum(attachmentTypes),
             size: z.number().int().min(1),
             siteVisitId: uuid.optional(),
+            punchPhoto: z.enum(["IN", "OUT"]).optional(),
           })
           .refine(
-            ({ mimeType, size, siteVisitId }) =>
-              (siteVisitId ? siteMediaTypes : documentTypes).some(
-                (type) => type === mimeType,
-              ) && size <= attachmentSizeLimit(mimeType),
+            ({ mimeType, size, siteVisitId, punchPhoto }) =>
+              !(punchPhoto && siteVisitId) &&
+              (punchPhoto
+                ? sitePhotoTypes
+                : siteVisitId
+                  ? siteMediaTypes
+                  : documentTypes
+              ).some((type) => type === mimeType) &&
+              size <= attachmentSizeLimit(mimeType),
             "Unsupported file type or file size exceeds the limit",
           ),
         body,
       );
+    const projectId = parse(uuid, id);
+    if (input.punchPhoto === "OUT") {
+      // An engineer can close an existing visit after being reassigned.
+      await requirePunchOutProject(this.db, ctx, projectId);
+    } else {
+      await this.security.project(ctx, projectId);
+      if (input.punchPhoto) requireSiteEngineer(ctx);
+    }
     if (input.siteVisitId)
       await requireOpenVisit(this.db, ctx, input.siteVisitId);
     const objectKey = `${ctx.orgId}/${id}/${randomUUID()}`;
@@ -357,6 +386,8 @@ export class CollaborationController {
     );
     const doc = await this.db.serial(async (tx) => {
       if (input.siteVisitId) await requireOpenVisit(tx, ctx, input.siteVisitId);
+      if (input.punchPhoto === "OUT")
+        await requirePunchOutProject(tx, ctx, projectId);
       const d = await tx.document.create({
         data: {
           orgId: ctx.orgId,
@@ -376,11 +407,20 @@ export class CollaborationController {
     @Param("id") id: string,
     @Param("doc") doc: string,
   ) {
-    const ctx = await this.security.context(req, "document.manage", id);
+    const ctx = await this.security.context(req, "document.manage");
+    const projectId = parse(uuid, id);
     const row = await this.db.document.findFirst({
-      where: { id: parse(uuid, doc), orgId: ctx.orgId, projectId: id },
+      where: { id: parse(uuid, doc), orgId: ctx.orgId, projectId },
     });
+    if (row?.punchPhoto !== "OUT") await this.security.project(ctx, projectId);
     if (!row) throw new NotFoundException("Document not found");
+    if (row.punchPhoto) {
+      requireSiteEngineer(ctx);
+      if (row.createdBy !== ctx.userId)
+        throw new ForbiddenException("Punch photo access denied");
+    }
+    if (row.punchPhoto === "OUT")
+      await requirePunchOutProject(this.db, ctx, projectId);
     if (row.siteVisitId) await requireOpenVisit(this.db, ctx, row.siteVisitId);
     const head = await storage().send(
       new HeadObjectCommand({
@@ -392,6 +432,8 @@ export class CollaborationController {
       throw new ConflictException("Uploaded file size or type does not match");
     return this.db.serial(async (tx) => {
       if (row.siteVisitId) await requireOpenVisit(tx, ctx, row.siteVisitId);
+      if (row.punchPhoto === "OUT")
+        await requirePunchOutProject(tx, ctx, projectId);
       await tx.outbox.upsert({
         where: { dedupeKey: `scan:${row.id}` },
         create: {
@@ -418,6 +460,7 @@ export class CollaborationController {
         orgId: ctx.orgId,
         projectId: id,
         status: "CLEAN",
+        ...visibleDocument,
       },
     });
     if (!row)
